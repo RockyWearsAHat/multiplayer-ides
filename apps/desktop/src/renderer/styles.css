@@ -43,6 +43,24 @@ body {
   margin-bottom: 12px;
 }
 
+.field-group {
+  margin-bottom: 12px;
+}
+
+.hidden {
+  display: none;
+}
+
+.checkbox-row {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+}
+
+.checkbox-row input[type="checkbox"] {
+  margin-top: 3px;
+}
+
 .field-row {
   display: flex;
   gap: 12px;
@@ -63,6 +81,18 @@ body {
   padding: 14px;
   background: rgba(240, 248, 255, 0.65);
   width: 100%;
+}
+
+.invite-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.copy-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
 }
 
 input,
@@ -88,6 +118,12 @@ button {
 
 button:hover {
   filter: brightness(1.07);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #496b97;
 }
 
 ul {

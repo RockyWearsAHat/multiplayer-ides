@@ -4,6 +4,10 @@ const CONTROL_EVENTS = {
   JOIN_SESSION: "join-session",
   JOIN_REQUEST: "join-request",
   JOIN_DECISION: "join-decision",
+  SNAPSHOT_META: "snapshot-meta",
+  SNAPSHOT_CHUNK: "snapshot-chunk",
+  SNAPSHOT_COMPLETE: "snapshot-complete",
+  TRANSFER_ERROR: "transfer-error",
   SESSION_READY: "session-ready",
   PRESENCE: "presence",
   ERROR: "error"
