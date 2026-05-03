@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multiplayer Code</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="panel">
+        <h1>Multiplayer Code</h1>
+        <p class="subtitle">
+          Desktop host/join manager for local IDE collaboration. Prototype target: VS Code bridge.
+        </p>
+
+        <label class="field">
+          <span>Your display name</span>
+          <input id="displayName" type="text" placeholder="Alex" />
+        </label>
+
+        <div class="field-row">
+          <label class="field grow">
+            <span>Workspace folder</span>
+            <input id="workspacePath" type="text" readonly placeholder="Choose a local folder" />
+          </label>
+          <button id="pickWorkspace">Choose Folder</button>
+        </div>
+
+        <div class="field-row split">
+          <div class="block">
+            <h2>Host Session</h2>
+            <label class="field">
+              <span>Host port</span>
+              <input id="hostPort" type="number" value="3700" />
+            </label>
+            <button id="hostButton">Start Hosting</button>
+            <p id="inviteCode" class="mono"></p>
+            <p id="inviteAddress" class="mono"></p>
+          </div>
+
+          <div class="block">
+            <h2>Join Session</h2>
+            <label class="field">
+              <span>Invite code (preferred)</span>
+              <input id="joinInviteCode" type="text" placeholder="Paste invite code" />
+            </label>
+            <label class="field">
+              <span>Fallback host address (host:port:sessionId)</span>
+              <input id="joinHostAddress" type="text" placeholder="127.0.0.1:3700:session-uuid" />
+            </label>
+            <button id="joinButton">Request Access</button>
+          </div>
+        </div>
+
+        <div class="block">
+          <h2>Detected IDEs</h2>
+          <ul id="ideList"></ul>
+        </div>
+
+        <div class="block">
+          <h2>Pending Join Requests</h2>
+          <ul id="pendingRequests"></ul>
+        </div>
+      </section>
+
+      <section class="panel log-panel">
+        <h2>Session Log</h2>
+        <ul id="statusLog"></ul>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

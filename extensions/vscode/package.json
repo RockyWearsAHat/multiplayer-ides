@@ -1,0 +1,38 @@
+{
+  "name": "multiplayer-code-bridge",
+  "displayName": "Multiplayer Code Bridge",
+  "description": "VS Code bridge for standalone Multiplayer Code desktop sessions",
+  "version": "0.1.0",
+  "publisher": "local-prototype",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "multiplayer.connectBridge",
+        "title": "Multiplayer: Connect Desktop Bridge"
+      },
+      {
+        "command": "multiplayer.disconnectBridge",
+        "title": "Multiplayer: Disconnect Desktop Bridge"
+      }
+    ]
+  },
+  "scripts": {
+    "watch": "echo \"Use F5 in Extension Development Host for this prototype\"",
+    "lint": "echo \"No lint configured\""
+  },
+  "dependencies": {
+    "@multiplayer/shared": "0.1.0",
+    "ws": "^8.18.0",
+    "yjs": "^13.6.20"
+  }
+}

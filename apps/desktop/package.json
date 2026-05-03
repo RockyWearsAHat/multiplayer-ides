@@ -1,0 +1,18 @@
+{
+  "name": "@multiplayer/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "echo \"Prototype build step not configured yet\""
+  },
+  "dependencies": {
+    "@multiplayer/shared": "0.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^34.3.0"
+  }
+}
