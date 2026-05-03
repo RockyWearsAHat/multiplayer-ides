@@ -1,18 +1,34 @@
 const state = {
-  workspacePath: "",
-  pendingRequests: []
+  hostWorkspacePath: "",
+  joinWorkspacePath: "",
+  cloneParentPath: "",
+  pendingRequests: [],
+  inviteOnlyLink: "",
+  publicInviteLink: ""
 };
 
 const displayNameInput = document.getElementById("displayName");
-const workspacePathInput = document.getElementById("workspacePath");
-const pickWorkspaceButton = document.getElementById("pickWorkspace");
+const hostWorkspacePathInput = document.getElementById("hostWorkspacePath");
+const pickHostWorkspaceButton = document.getElementById("pickHostWorkspace");
 const hostPortInput = document.getElementById("hostPort");
+const inviteOnlyModeInput = document.getElementById("inviteOnlyMode");
 const hostButton = document.getElementById("hostButton");
-const joinInviteCodeInput = document.getElementById("joinInviteCode");
-const joinHostAddressInput = document.getElementById("joinHostAddress");
+
+const inviteOnlyLinkInput = document.getElementById("inviteOnlyLink");
+const publicInviteLinkInput = document.getElementById("publicInviteLink");
+const copyInviteOnlyLinkButton = document.getElementById("copyInviteOnlyLink");
+const copyPublicInviteLinkButton = document.getElementById("copyPublicInviteLink");
+
+const joinInviteTextInput = document.getElementById("joinInviteText");
+const hasLocalProjectInput = document.getElementById("hasLocalProject");
+const localProjectGroup = document.getElementById("localProjectGroup");
+const cloneTargetGroup = document.getElementById("cloneTargetGroup");
+const joinWorkspacePathInput = document.getElementById("workspacePath");
+const pickWorkspaceButton = document.getElementById("pickWorkspace");
+const cloneParentPathInput = document.getElementById("cloneParentPath");
+const pickCloneParentButton = document.getElementById("pickCloneParent");
+
 const joinButton = document.getElementById("joinButton");
-const inviteCodeNode = document.getElementById("inviteCode");
-const inviteAddressNode = document.getElementById("inviteAddress");
 const ideListNode = document.getElementById("ideList");
 const pendingRequestsNode = document.getElementById("pendingRequests");
 const statusLogNode = document.getElementById("statusLog");
@@ -32,6 +48,22 @@ function renderIdeList(ides) {
     }`;
     ideListNode.append(item);
   });
+}
+
+function setJoinModeUi() {
+  const hasLocalProject = hasLocalProjectInput.checked;
+  localProjectGroup.classList.toggle("hidden", !hasLocalProject);
+  cloneTargetGroup.classList.toggle("hidden", hasLocalProject);
+}
+
+async function copyInvite(value) {
+  if (!value) {
+    pushStatus("Nothing to copy yet. Start hosting first.");
+    return;
+  }
+
+  await window.multiplayerApi.copyToClipboard(value);
+  pushStatus("Copied invite link to clipboard");
 }
 
 function renderPendingRequests() {
@@ -90,6 +122,7 @@ async function bootstrap() {
   renderIdeList(ides);
 
   renderPendingRequests();
+  setJoinModeUi();
 
   window.multiplayerApi.onStatus((entry) => {
     pushStatus(`[${entry.timestamp}] ${entry.message}`);
@@ -100,14 +133,30 @@ async function bootstrap() {
     renderPendingRequests();
   });
 
-  window.multiplayerApi.onJoinAccepted(() => {
+  window.multiplayerApi.onJoinAccepted((payload) => {
+    if (payload?.workspacePath) {
+      pushStatus(`Join approved. Opening workspace: ${payload.workspacePath}`);
+      return;
+    }
+
     pushStatus("Join approved. If VS Code CLI is installed, workspace should open shortly.");
   });
 
-  window.multiplayerApi.onJoinRejected(() => {
-    pushStatus("Join request was rejected by host.");
+  window.multiplayerApi.onJoinRejected((payload) => {
+    pushStatus(payload?.reason || "Join request was rejected by host.");
   });
 }
+
+pickHostWorkspaceButton.addEventListener("click", async () => {
+  const path = await window.multiplayerApi.pickWorkspace();
+  if (!path) {
+    return;
+  }
+
+  state.hostWorkspacePath = path;
+  hostWorkspacePathInput.value = path;
+  pushStatus(`Host workspace selected: ${path}`);
+});
 
 pickWorkspaceButton.addEventListener("click", async () => {
   const path = await window.multiplayerApi.pickWorkspace();
@@ -115,13 +164,24 @@ pickWorkspaceButton.addEventListener("click", async () => {
     return;
   }
 
-  state.workspacePath = path;
-  workspacePathInput.value = path;
-  pushStatus(`Selected workspace: ${path}`);
+  state.joinWorkspacePath = path;
+  joinWorkspacePathInput.value = path;
+  pushStatus(`Local project selected: ${path}`);
+});
+
+pickCloneParentButton.addEventListener("click", async () => {
+  const path = await window.multiplayerApi.pickWorkspace();
+  if (!path) {
+    return;
+  }
+
+  state.cloneParentPath = path;
+  cloneParentPathInput.value = path;
+  pushStatus(`Project download location selected: ${path}`);
 });
 
 hostButton.addEventListener("click", async () => {
-  if (!state.workspacePath) {
+  if (!state.hostWorkspacePath) {
     pushStatus("Select a workspace folder before hosting");
     return;
   }
@@ -130,44 +190,62 @@ hostButton.addEventListener("click", async () => {
   await window.multiplayerApi.setDisplayName(displayName);
 
   const result = await window.multiplayerApi.hostSession({
-    workspacePath: state.workspacePath,
-    port: Number(hostPortInput.value) || 3700
+    workspacePath: state.hostWorkspacePath,
+    port: Number(hostPortInput.value) || 3700,
+    inviteOnlyMode: inviteOnlyModeInput.checked
   });
 
-  inviteCodeNode.textContent = `Invite Code: ${result.inviteCode}`;
-  inviteAddressNode.textContent = `Address: ${result.invite.host}:${result.invite.port}:${result.invite.sessionId}`;
+  state.inviteOnlyLink = result.inviteOnlyLink;
+  state.publicInviteLink = result.publicInviteLink;
+  inviteOnlyLinkInput.value = result.inviteOnlyLink;
+  publicInviteLinkInput.value = result.publicInviteLink;
 
-  pushStatus(`Hosting as ${displayName}`);
+  if (result.inviteOnlyMode) {
+    pushStatus(`Hosting as ${displayName} in invite-only mode. Share the private invite link.`);
+  } else {
+    pushStatus(`Hosting as ${displayName}. Open join link is active.`);
+  }
 });
 
 joinButton.addEventListener("click", async () => {
-  if (!state.workspacePath) {
-    pushStatus("Select a local workspace folder before joining");
-    return;
-  }
-
   const displayName = displayNameInput.value.trim() || "Guest";
   await window.multiplayerApi.setDisplayName(displayName);
 
-  const inviteCode = joinInviteCodeInput.value.trim();
-  const hostAddress = joinHostAddressInput.value.trim();
+  const inviteText = joinInviteTextInput.value.trim();
+  const hasLocalProject = hasLocalProjectInput.checked;
 
-  if (!inviteCode && !hostAddress) {
-    pushStatus("Enter invite code or fallback host address");
+  if (!inviteText) {
+    pushStatus("Paste an invite link or invite code");
+    return;
+  }
+
+  if (hasLocalProject && !state.joinWorkspacePath) {
+    pushStatus("Select your local project folder to join with your existing checkout");
     return;
   }
 
   try {
     await window.multiplayerApi.joinSession({
-      inviteCode,
-      hostAddress,
+      inviteText,
       displayName,
-      workspacePath: state.workspacePath
+      workspacePath: hasLocalProject ? state.joinWorkspacePath : null,
+      cloneParentPath: hasLocalProject ? null : state.cloneParentPath || null
     });
+
     pushStatus("Join request submitted");
   } catch (error) {
     pushStatus(`Join failed: ${error.message}`);
   }
+});
+
+hasLocalProjectInput.addEventListener("change", setJoinModeUi);
+
+copyInviteOnlyLinkButton.addEventListener("click", async () => {
+  await copyInvite(state.inviteOnlyLink);
+});
+
+copyPublicInviteLinkButton.addEventListener("click", async () => {
+  await copyInvite(state.publicInviteLink);
 });
 
 bootstrap();

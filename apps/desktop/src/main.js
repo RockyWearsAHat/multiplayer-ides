@@ -1,5 +1,5 @@
 const path = require("node:path");
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require("electron");
 
 const { detectInstalledIdes } = require("./ide-detector");
 const { SessionManager } = require("./session-manager");
@@ -31,8 +31,8 @@ function createWindow() {
     window.webContents.send("session:join-accepted", payload);
   });
 
-  sessionManager.on("join-rejected", () => {
-    window.webContents.send("session:join-rejected");
+  sessionManager.on("join-rejected", (payload) => {
+    window.webContents.send("session:join-rejected", payload || null);
   });
 }
 
@@ -82,4 +82,9 @@ ipcMain.handle("session:join", async (_event, payload) => {
 
 ipcMain.handle("session:decide", (_event, payload) => {
   return sessionManager.decideJoinRequest(payload);
+});
+
+ipcMain.handle("clipboard:write", (_event, value) => {
+  clipboard.writeText(value || "");
+  return true;
 });

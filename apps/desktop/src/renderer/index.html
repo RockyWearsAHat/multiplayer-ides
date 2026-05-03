@@ -21,34 +21,77 @@
 
         <div class="field-row">
           <label class="field grow">
-            <span>Workspace folder</span>
-            <input id="workspacePath" type="text" readonly placeholder="Choose a local folder" />
+            <span>Host workspace folder</span>
+            <input id="hostWorkspacePath" type="text" readonly placeholder="Choose the project to host" />
           </label>
-          <button id="pickWorkspace">Choose Folder</button>
+          <button id="pickHostWorkspace">Choose Folder</button>
         </div>
 
         <div class="field-row split">
           <div class="block">
             <h2>Host Session</h2>
+            <label class="field checkbox-row">
+              <input id="inviteOnlyMode" type="checkbox" checked />
+              <span>Invite-only mode (recommended): only people with your private invite link can request access.</span>
+            </label>
             <label class="field">
               <span>Host port</span>
               <input id="hostPort" type="number" value="3700" />
             </label>
             <button id="hostButton">Start Hosting</button>
-            <p id="inviteCode" class="mono"></p>
-            <p id="inviteAddress" class="mono"></p>
+
+            <div class="invite-grid">
+              <label class="field">
+                <span>Private invite link</span>
+                <div class="copy-row">
+                  <input id="inviteOnlyLink" type="text" readonly class="mono" />
+                  <button id="copyInviteOnlyLink" class="secondary">Copy</button>
+                </div>
+              </label>
+
+              <label class="field">
+                <span>Open join link (works only if invite-only is off)</span>
+                <div class="copy-row">
+                  <input id="publicInviteLink" type="text" readonly class="mono" />
+                  <button id="copyPublicInviteLink" class="secondary">Copy</button>
+                </div>
+              </label>
+            </div>
           </div>
 
           <div class="block">
             <h2>Join Session</h2>
             <label class="field">
-              <span>Invite code (preferred)</span>
-              <input id="joinInviteCode" type="text" placeholder="Paste invite code" />
+              <span>Invite link or invite code</span>
+              <input id="joinInviteText" type="text" placeholder="Paste invite link" />
             </label>
-            <label class="field">
-              <span>Fallback host address (host:port:sessionId)</span>
-              <input id="joinHostAddress" type="text" placeholder="127.0.0.1:3700:session-uuid" />
+
+            <label class="field checkbox-row">
+              <input id="hasLocalProject" type="checkbox" />
+              <span>I already have this project locally.</span>
             </label>
+
+            <div id="localProjectGroup" class="field-group hidden">
+              <div class="field-row">
+                <label class="field grow">
+                  <span>Local project folder</span>
+                  <input id="workspacePath" type="text" readonly placeholder="Choose your local project" />
+                </label>
+                <button id="pickWorkspace">Choose Folder</button>
+              </div>
+            </div>
+
+            <div id="cloneTargetGroup" class="field-group">
+              <div class="field-row">
+                <label class="field grow">
+                  <span>Download location (optional)</span>
+                  <input id="cloneParentPath" type="text" readonly placeholder="Default: ~/Multiplayer Code Sessions" />
+                </label>
+                <button id="pickCloneParent">Pick Location</button>
+              </div>
+              <p class="hint">If you do not have the project, we securely transfer it from the host after they approve your request.</p>
+            </div>
+
             <button id="joinButton">Request Access</button>
           </div>
         </div>

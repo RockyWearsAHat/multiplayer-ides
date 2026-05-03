@@ -6,9 +6,12 @@ Standalone multiplayer coding app prototype that uses a desktop host/join daemon
 
 - Desktop app (Electron) for:
   - IDE detection (VS Code, Cursor, JetBrains, Sublime, Neovim, Zed)
-  - Workspace folder selection
-  - Hosting a session and generating invite code
+  - Workspace folder selection for hosting
+  - Hosting with copyable invite links (private invite-only and optional open link)
+  - Host invite-only toggle for join policy
   - Join requests and host approval/rejection
+  - Fast git-style transfer (git bundle) for clean git workspaces
+  - Host-approved project transfer when guests do not have a local project folder
   - Local IDE bridge endpoint (`ws://127.0.0.1:48765`)
 - VS Code extension bridge for:
   - Connecting to local daemon bridge
@@ -23,17 +26,18 @@ Standalone multiplayer coding app prototype that uses a desktop host/join daemon
 
 - `apps/desktop`: session orchestration, networking, approvals, invite handling
 - `extensions/vscode`: editor integration and Yjs-based sync application
-- `packages/shared`: shared event names and invite encoding/decoding helpers
+- `packages/shared`: shared event names, transfer events, and invite encoding/decoding helpers
 
 Current transport flow:
 
 1. Host starts desktop app session and picks workspace.
 2. Host desktop app opens local VS Code and starts control server (`ws://<host-ip>:3700`).
-3. Guest enters invite code and requests access.
+3. Guest pastes invite link/code and requests access.
 4. Host accepts request.
-5. Guest desktop app opens local VS Code for guest workspace.
-6. Both local VS Code extensions connect to local daemon bridge (`ws://127.0.0.1:48765`).
-7. Desktop apps relay Yjs/cursor messages over host-guest control socket.
+5. If guest has no local project, host uses fast git-bundle transfer when possible, with automatic snapshot fallback.
+6. Guest desktop app opens local VS Code for guest workspace.
+7. Both local VS Code extensions connect to local daemon bridge (`ws://127.0.0.1:48765`).
+8. Desktop apps relay Yjs/cursor messages over host-guest control socket.
 
 ## Setup
 
@@ -60,18 +64,21 @@ npm run start:desktop
 1. Open desktop app.
 2. Pick workspace folder.
 3. Set display name.
-4. Click `Start Hosting`.
-5. Share invite code with guest.
-6. Approve pending join request.
+4. (Optional) Keep invite-only mode enabled for safer joins.
+5. Click `Start Hosting`.
+6. Share the private invite link with guest (or open link if invite-only mode is disabled).
+7. Approve pending join request.
 
 ## Guest flow
 
 1. Open desktop app.
-2. Pick local workspace folder.
-3. Set display name.
-4. Paste invite code.
+2. Set display name.
+3. Paste invite link/code.
+4. Choose one:
+  - Use an existing local project folder, or
+  - Leave it unset and choose an optional download location.
 5. Click `Request Access`.
-6. After acceptance, VS Code opens workspace and sync starts.
+6. After acceptance, the project opens. If no local project was selected, it is transferred from the host first.
 
 ## Prototype limitations
 
@@ -79,7 +86,9 @@ npm run start:desktop
 - Single host + one guest path is the tested scope
 - Local/LAN direct WebSocket transport only
 - Basic cursor rendering only for visible editors
-- No auth/encryption yet (for local prototype only)
+- Invite-only mode with per-session private secret links
+- Workspace transfer runs only after explicit host approval
+- Fast transfer requires both sides to have git installed and host workspace to have no uncommitted changes
 
 ## Next steps for production
 
