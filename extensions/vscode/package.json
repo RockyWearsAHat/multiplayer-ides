@@ -4,6 +4,10 @@
   "description": "VS Code bridge for standalone Multiplayer Code desktop sessions",
   "version": "0.1.0",
   "publisher": "local-prototype",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RockyWearsAHat/multiplayer-ides.git"
+  },
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -14,25 +18,56 @@
     "onStartupFinished"
   ],
   "main": "./src/extension.js",
+  "files": [
+    "src/**",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "contributes": {
     "commands": [
       {
-        "command": "multiplayer.connectBridge",
-        "title": "Multiplayer: Connect Desktop Bridge"
+        "command": "multiplayer.easyStart",
+        "title": "Multiplayer: Start Live Collaboration",
+        "category": "Multiplayer"
       },
       {
-        "command": "multiplayer.disconnectBridge",
-        "title": "Multiplayer: Disconnect Desktop Bridge"
+        "command": "multiplayer.hostSession",
+        "title": "Host Session",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.joinSession",
+        "title": "Join Session",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.openPanel",
+        "title": "Open Multiplayer Panel",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.toggleInviteOnly",
+        "title": "Toggle Invite Policy",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.endSession",
+        "title": "End Session",
+        "category": "Multiplayer"
       }
     ]
   },
   "scripts": {
     "watch": "echo \"Use F5 in Extension Development Host for this prototype\"",
-    "lint": "echo \"No lint configured\""
+    "lint": "echo \"No lint configured\"",
+    "package": "node ./scripts/package-vsix.js"
   },
   "dependencies": {
-    "@multiplayer/shared": "0.1.0",
     "ws": "^8.18.0",
     "yjs": "^13.6.20"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.1"
   }
 }
