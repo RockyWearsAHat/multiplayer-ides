@@ -1,0 +1,17 @@
+{
+  "name": "multiplayer-code",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Standalone multiplayer coding prototype with desktop session manager and VS Code bridge",
+  "workspaces": [
+    "apps/desktop",
+    "extensions/vscode",
+    "packages/shared"
+  ],
+  "scripts": {
+    "start:desktop": "npm --workspace apps/desktop run start",
+    "dev:desktop": "npm --workspace apps/desktop run dev",
+    "build:desktop": "npm --workspace apps/desktop run build",
+    "start:extension": "npm --workspace extensions/vscode run watch"
+  }
+}
