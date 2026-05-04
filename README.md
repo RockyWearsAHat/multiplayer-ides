@@ -1,9 +1,22 @@
 # Multiplayer Code (Prototype)
 
-Standalone multiplayer coding app prototype that uses a desktop host/join daemon plus a VS Code bridge extension.
+Multiplayer coding prototype with a VS Code-first workflow.
+
+Current recommended path: run sessions directly from the VS Code extension.
+
+Legacy path: desktop host/join app is still available.
 
 ## What this prototype includes
 
+- VS Code extension for:
+  - In-IDE host/join session flow
+  - Invite links with invite-only policy
+  - Host approval prompts for join requests
+  - Realtime file sync (Yjs updates)
+  - Cursor presence sync (basic marker)
+  - Live chat panel
+  - Repo-persisted chat history (`.multiplayer/chat/events.jsonl`, `.multiplayer/chat/latest.md`)
+  - Prototype voice/video controls in panel (WebRTC signaling)
 - Desktop app (Electron) for:
   - IDE detection (VS Code, Cursor, JetBrains, Sublime, Neovim, Zed)
   - Workspace folder selection for hosting
@@ -13,22 +26,26 @@ Standalone multiplayer coding app prototype that uses a desktop host/join daemon
   - Fast git-style transfer (git bundle) for clean git workspaces
   - Host-approved project transfer when guests do not have a local project folder
   - Local IDE bridge endpoint (`ws://127.0.0.1:48765`)
-- VS Code extension bridge for:
-  - Connecting to local daemon bridge
-  - Syncing file-open events
-  - Realtime text sync using Yjs document updates over WebSocket
-  - Sending/receiving cursor position events (basic cursor marker)
 - Separation of concerns:
   - Realtime collaborative text uses Yjs updates
   - Durable history stays in each user's own local Git repo and identity
 
 ## Architecture
 
-- `apps/desktop`: session orchestration, networking, approvals, invite handling
-- `extensions/vscode`: editor integration and Yjs-based sync application
+- `apps/desktop`: legacy desktop host/join flow
+- `extensions/vscode`: in-IDE host/join, approvals, sync, chat, and panel UX
 - `packages/shared`: shared event names, transfer events, and invite encoding/decoding helpers
 
-Current transport flow:
+Current in-IDE flow:
+
+1. In VS Code, run `Multiplayer: Start Live Collaboration`.
+2. Choose `Host New Session` or `Join Session`.
+3. Host shares invite link.
+4. Host approves incoming join request.
+5. Session members edit and sync live.
+6. Optional: open `Multiplayer: Open Multiplayer Panel` for participants/chat/voice-video.
+
+Legacy desktop flow:
 
 1. Host starts desktop app session and picks workspace.
 2. Host desktop app opens local VS Code and starts control server (`ws://<host-ip>:3700`).
@@ -47,19 +64,35 @@ Current transport flow:
 npm install
 ```
 
-2. Run desktop app:
+2. Run desktop app (optional/legacy path):
 
 ```bash
 npm run start:desktop
 ```
 
-3. Load VS Code extension on each machine:
+3. Install VS Code extension on each machine:
 
-- Open `extensions/vscode` in VS Code.
-- Press `F5` to launch an Extension Development Host.
-- In the extension host window, run command: `Multiplayer: Connect Desktop Bridge`.
+- Build and install:
 
-## Host flow
+```bash
+cd extensions/vscode
+npm install
+npm run package
+code --install-extension multiplayer-code-bridge.vsix
+```
+
+- In VS Code run: `Multiplayer: Start Live Collaboration`
+
+## In-IDE Commands
+
+- `Multiplayer: Start Live Collaboration`
+- `Multiplayer: Host Session`
+- `Multiplayer: Join Session`
+- `Multiplayer: Open Multiplayer Panel`
+- `Multiplayer: Toggle Invite Policy`
+- `Multiplayer: End Session`
+
+## Legacy Desktop Host Flow
 
 1. Open desktop app.
 2. Pick workspace folder.
@@ -69,7 +102,7 @@ npm run start:desktop
 6. Share the private invite link with guest (or open link if invite-only mode is disabled).
 7. Approve pending join request.
 
-## Guest flow
+## Legacy Desktop Guest Flow
 
 1. Open desktop app.
 2. Set display name.
@@ -86,6 +119,7 @@ npm run start:desktop
 - Single host + one guest path is the tested scope
 - Local/LAN direct WebSocket transport only
 - Basic cursor rendering only for visible editors
+- Voice/video is prototype-level (no SFU, no TURN hardening yet)
 - Invite-only mode with per-session private secret links
 - Workspace transfer runs only after explicit host approval
 - Fast transfer requires both sides to have git installed and host workspace to have no uncommitted changes

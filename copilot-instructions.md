@@ -1,18 +1,25 @@
 # Multiplayer Code Prototype Context
 
-- Project type: Node.js monorepo (desktop app + VS Code extension + shared package)
+- Project type: Node.js monorepo (VS Code extension first, optional desktop app, shared package)
 - Packages:
-  - `apps/desktop`: Electron session manager/daemon
-  - `extensions/vscode`: VS Code bridge for collaborative sync
-  - `packages/shared`: Protocol/event constants and shared helpers
+  - `apps/desktop`: legacy Electron session manager/daemon flow
+  - `extensions/vscode`: primary in-IDE multiplayer implementation
+  - `packages/shared`: protocol/event constants and invite helpers used by desktop flow
+- Extension modules:
+  - `extensions/vscode/src/extension.js`: command registration and editor sync integration
+  - `extensions/vscode/src/session-service.js`: in-IDE host/join transport, approvals, participants, repo chat persistence
+  - `extensions/vscode/src/panel.js`: webview panel UI for participants/chat/voice-video controls
+  - `extensions/vscode/src/protocol.js`: extension-side protocol/event helpers and invite parsing
+  - `extensions/vscode/scripts/package-vsix.js`: isolated VSIX packaging helper for monorepo-safe builds
 - Realtime sync: Yjs updates over WebSocket transport
-- Host/session ownership: desktop app controls approvals and session state
+- Primary host/session ownership: VS Code extension controls approvals and session state
 - Prototype networking: direct WebSocket host/guest connection over LAN with invite link transport
 - Invite UX: copyable invite links (`multiplayercode://join?code=...`) with invite-only mode support
-- Guest onboarding: host-approved fast git-bundle transfer with snapshot fallback when guest lacks local project files
-- Initial IDE support: VS Code collaboration bridge, plus installed-IDE detection in desktop app
+- Repo chat history: `.multiplayer/chat/events.jsonl` + `.multiplayer/chat/latest.md`
+- Voice/video: prototype WebRTC signaling through extension panel
 - Key commands:
   - `npm install`
   - `npm run dev:desktop`
   - `npm run start:desktop`
   - `npm run start:extension`
+  - `cd extensions/vscode && npm run package`
