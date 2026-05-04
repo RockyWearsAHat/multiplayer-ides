@@ -11,6 +11,7 @@ let panel = null;
 let sessionService = null;
 let suppressChanges = false;
 let latestParticipants = [];
+let latestChatMessages = [];
 
 const sessionUiState = {
   mode: "idle",
@@ -54,6 +55,12 @@ function activate(context) {
     onEndSession: async () => {
       await endCurrentSession();
     },
+    onOpenChatTab: () => {
+      openChatTab();
+    },
+    onOpenBrowserTab: (initialView) => {
+      openBrowserTab(initialView);
+    },
     onCopyInvite: async (kind) => {
       const invite = kind === "open"
         ? sessionUiState.openInviteLink
@@ -67,9 +74,10 @@ function activate(context) {
       await vscode.env.clipboard.writeText(invite);
       vscode.window.showInformationMessage(`${kind === "open" ? "Open" : "Private"} invite copied`);
     },
-    onPanelReady: () => {
+    onPanelReady: async () => {
       pushSessionStateToPanel();
       sendPanelMessage(panel, { type: "participants", payload: latestParticipants });
+      await refreshChatHistory();
     }
   });
 
@@ -103,6 +111,7 @@ function activate(context) {
 
   sessionService.on("join-rejected", (reason) => {
     sessionUiState.mode = "idle";
+    sessionUiState.status = "Join rejected";
     sessionUiState.openInviteLink = "";
     sessionUiState.privateInviteLink = "";
     pushSessionStateToPanel();
@@ -125,6 +134,11 @@ function activate(context) {
   });
 
   sessionService.on("chat-message", (message) => {
+    latestChatMessages.push(message);
+    if (latestChatMessages.length > 300) {
+      latestChatMessages = latestChatMessages.slice(-300);
+    }
+
     sendPanelMessage(panel, { type: "chat-message", payload: message });
   });
 
@@ -162,6 +176,8 @@ function activate(context) {
     vscode.commands.registerCommand("multiplayer.hostSession", hostFromPrompt),
     vscode.commands.registerCommand("multiplayer.joinSession", joinFromPrompt),
     vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel()),
+    vscode.commands.registerCommand("multiplayer.openWorkspaceTab", () => openBrowserTab("overview")),
+    vscode.commands.registerCommand("multiplayer.openChatTab", () => openChatTab()),
     vscode.commands.registerCommand("multiplayer.endSession", endCurrentSession),
     vscode.commands.registerCommand("multiplayer.toggleInviteOnly", async () => {
       const enabled = await vscode.window.showQuickPick(
@@ -254,6 +270,7 @@ async function joinFromPrompt() {
 async function endCurrentSession() {
   await sessionService.endSession();
   latestParticipants = [];
+  latestChatMessages = [];
   sessionUiState.mode = "idle";
   sessionUiState.status = "Session stopped";
   sessionUiState.inviteOnlyMode = null;
@@ -274,6 +291,25 @@ async function askDisplayName() {
 
 function openPanel() {
   vscode.commands.executeCommand("multiplayer.sidePanel.focus");
+}
+
+function openBrowserTab(initialView = "overview") {
+  panel.openEditorPanel({
+    initialView,
+    title: "Multiplayer Workspace"
+  });
+}
+
+function openChatTab() {
+  panel.openEditorPanel({
+    initialView: "chat",
+    title: "Multiplayer Team Chat"
+  });
+}
+
+async function refreshChatHistory() {
+  latestChatMessages = await sessionService.getRecentChatMessages(250);
+  sendPanelMessage(panel, { type: "chat-history", payload: latestChatMessages });
 }
 
 function onDidOpenDocument(document) {

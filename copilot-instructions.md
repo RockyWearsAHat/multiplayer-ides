@@ -8,9 +8,10 @@
 - Extension modules:
   - `extensions/vscode/src/extension.js`: command registration and editor sync integration
   - `extensions/vscode/src/session-service.js`: in-IDE host/join transport, approvals, participants, repo chat persistence
-  - `extensions/vscode/src/panel.js`: webview panel UI for participants/chat/voice-video controls
+  - `extensions/vscode/src/panel.js`: multi-surface webview UI (sidebar + editor tabs) with tabbed browser navigation, chat pop-out, and call controls
   - `extensions/vscode/src/protocol.js`: extension-side protocol/event helpers and invite parsing
   - `extensions/vscode/scripts/package-vsix.js`: isolated VSIX packaging helper for monorepo-safe builds
+- Extension runtime entrypoint: `extensions/vscode/package.json` uses `main: ./src/extension.js`
 - Realtime sync: Yjs updates over WebSocket transport
 - Primary host/session ownership: VS Code extension controls approvals and session state
 - Prototype networking: direct WebSocket host/guest connection over LAN with invite link transport
@@ -23,3 +24,5 @@
   - `npm run start:desktop`
   - `npm run start:extension`
   - `cd extensions/vscode && npm run package`
+  - VS Code command palette: `Multiplayer: Open Multiplayer Workspace Tab`
+  - VS Code command palette: `Multiplayer: Open Multiplayer Chat Tab`

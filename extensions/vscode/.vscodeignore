@@ -1,0 +1,6 @@
+.vscode/**
+scripts/**
+src/**
+**/.DS_Store
+**/*.vsix
+node_modules/**

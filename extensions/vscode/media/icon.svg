@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <circle cx="7" cy="7" r="2.4" stroke="currentColor" stroke-width="1.7" />
-  <circle cx="17" cy="7" r="2.4" stroke="currentColor" stroke-width="1.7" />
-  <path d="M3.7 16.4c0-2.2 1.8-4 4-4h1.1c2.2 0 4 1.8 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-  <path d="M11.2 16.4c0-2.2 1.8-4 4-4h1.1c2.2 0 4 1.8 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-  <path d="M11.9 10.8h0.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+  <!-- Left person (smaller, offset back) -->
+  <circle cx="8" cy="8" r="2.6" fill="currentColor" opacity="0.7"/>
+  <path d="M3.5 19c0-2.5 2-4.5 4.5-4.5h1c.7 0 1.35.16 1.94.44" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none" opacity="0.7"/>
+  <!-- Right person (primary) -->
+  <circle cx="15.5" cy="7" r="3.1" fill="currentColor"/>
+  <path d="M9.5 19c0-2.9 2.3-5.2 5.2-5.2H16c2.9 0 5.2 2.3 5.2 5.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" fill="none"/>
 </svg>
