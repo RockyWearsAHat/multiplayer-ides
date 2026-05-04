@@ -91,21 +91,23 @@ function getWebviewHtml() {
 
       .wrap {
         display: grid;
-        gap: 10px;
-        padding: 10px;
+        gap: 12px;
+        padding: 12px;
       }
 
       .card {
-        border: 1px solid var(--vscode-panel-border);
-        border-radius: 10px;
-        padding: 10px;
-        background: var(--vscode-editor-background);
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+        border-radius: 12px;
+        padding: 12px;
+        background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-sideBar-background) 10%);
+        box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
       }
 
       .card h3 {
         margin: 0 0 8px;
-        font-size: 12px;
-        letter-spacing: 0.2px;
+        font-size: 11px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
         font-weight: 700;
       }
 
@@ -122,9 +124,20 @@ function getWebviewHtml() {
         height: 22px;
         padding: 0 8px;
         border-radius: 999px;
-        border: 1px solid var(--vscode-panel-border);
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 85%, transparent);
         font-size: 11px;
         color: var(--vscode-descriptionForeground);
+        background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-sideBar-background) 20%);
+      }
+
+      .pill[data-mode="host"] {
+        color: var(--vscode-textLink-foreground);
+        border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
+      }
+
+      .pill[data-mode="guest"] {
+        color: var(--vscode-charts-orange);
+        border-color: color-mix(in srgb, var(--vscode-charts-orange) 45%, transparent);
       }
 
       .status-copy {
@@ -160,35 +173,51 @@ function getWebviewHtml() {
       }
 
       button {
-        padding: 7px 10px;
-        border: 0;
+        padding: 8px 11px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 80%, transparent);
         border-radius: 6px;
-        background: var(--vscode-button-background);
-        color: var(--vscode-button-foreground);
+        background: color-mix(in srgb, var(--vscode-editor-background) 75%, var(--vscode-sideBar-background) 25%);
+        color: var(--vscode-foreground);
         cursor: pointer;
       }
 
       button:hover {
-        background: var(--vscode-button-hoverBackground);
+        background: color-mix(in srgb, var(--vscode-list-hoverBackground) 75%, var(--vscode-editor-background) 25%);
+      }
+
+      button.primary {
+        border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
+        background: color-mix(in srgb, var(--vscode-textLink-foreground) 88%, var(--vscode-editor-background) 12%);
+        color: var(--vscode-editor-background);
+      }
+
+      button.primary:hover {
+        background: color-mix(in srgb, var(--vscode-textLink-foreground) 78%, var(--vscode-editor-background) 22%);
       }
 
       button.secondary {
-        background: var(--vscode-button-secondaryBackground, var(--vscode-editor-inactiveSelectionBackground));
-        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        background: color-mix(in srgb, var(--vscode-editor-background) 85%, var(--vscode-sideBar-background) 15%);
+        color: var(--vscode-foreground);
       }
 
       button.secondary:hover {
-        background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+        background: color-mix(in srgb, var(--vscode-list-hoverBackground) 80%, var(--vscode-editor-background) 20%);
       }
 
       button.warn {
-        background: var(--vscode-inputValidation-errorBackground, #7e2f2f);
-        color: var(--vscode-inputValidation-errorForeground, #ffffff);
+        border-color: color-mix(in srgb, var(--vscode-errorForeground) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-errorForeground) 20%, transparent);
+        color: var(--vscode-errorForeground);
+      }
+
+      button.warn:hover {
+        background: color-mix(in srgb, var(--vscode-errorForeground) 30%, transparent);
       }
 
       button:disabled {
         cursor: default;
-        opacity: 0.6;
+        opacity: 0.5;
+        border-color: color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
       }
 
       .btn-grid {
@@ -229,9 +258,10 @@ function getWebviewHtml() {
       .chat-line {
         font-size: 12px;
         line-height: 1.4;
-        background: var(--vscode-editor-inactiveSelectionBackground);
+        background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 70%, transparent);
         border-radius: 6px;
         padding: 6px 8px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
       }
 
       .chat-line .meta {
@@ -266,7 +296,7 @@ function getWebviewHtml() {
       }
 
       .video-card {
-        border: 1px solid var(--vscode-panel-border);
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
         border-radius: 8px;
         overflow: hidden;
       }
@@ -308,7 +338,7 @@ function getWebviewHtml() {
       <section class="card">
         <h3>Quick Actions</h3>
         <div class="btn-grid">
-          <button id="hostSession">Host</button>
+          <button id="hostSession" class="primary">Host</button>
           <button id="joinSession" class="secondary">Join</button>
         </div>
         <div class="row" style="margin-top:8px">
@@ -349,14 +379,14 @@ function getWebviewHtml() {
         <div id="chat"></div>
         <div class="row stack" style="margin-top:8px">
           <input id="chatInput" placeholder="Send a message to everyone in this session" />
-          <button id="sendChat">Send</button>
+          <button id="sendChat" class="primary">Send</button>
         </div>
       </section>
 
       <section class="card">
         <h3>Voice + Video</h3>
         <div class="row" style="margin-top:8px">
-          <button id="startCall">Start Call</button>
+          <button id="startCall" class="primary">Start Call</button>
           <button id="toggleAudio" class="secondary">Mute/Unmute</button>
           <button id="toggleVideo" class="secondary">Camera On/Off</button>
         </div>
@@ -414,6 +444,7 @@ function getWebviewHtml() {
       function updateSessionState(nextState) {
         sessionState = { ...sessionState, ...(nextState || {}) };
         const mode = sessionState.mode || "idle";
+        modePill.dataset.mode = mode;
 
         modePill.textContent = mode === "host" ? "Hosting" : mode === "guest" ? "Guest" : "Idle";
         sessionStatus.textContent = sessionState.status || "Ready";
