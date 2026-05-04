@@ -25,14 +25,6 @@ function activate(context) {
   statusBar.text = "Multiplayer: idle";
   statusBar.show();
 
-  context.subscriptions.push(
-    statusBar,
-    remoteCursorType,
-    vscode.window.registerWebviewViewProvider("multiplayer.sidePanel", panel, {
-      webviewOptions: { retainContextWhenHidden: true }
-    })
-  );
-
   sessionService = new SessionService(getWorkspaceRoot);
 
   panel = new MultiplayerViewProvider({
@@ -46,6 +38,14 @@ function activate(context) {
       sendPanelMessage(panel, { type: "status", payload: statusBar?.text || "Multiplayer: ready" });
     }
   });
+
+  context.subscriptions.push(
+    statusBar,
+    remoteCursorType,
+    vscode.window.registerWebviewViewProvider("multiplayer.sidePanel", panel, {
+      webviewOptions: { retainContextWhenHidden: true }
+    })
+  );
 
   sessionService.on("status", (entry) => {
     setStatus(entry.message);
