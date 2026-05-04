@@ -326,6 +326,13 @@ button.danger:hover:not(:disabled) {
   border-color: var(--vscode-errorForeground);
 }
 
+button.copied {
+  background: var(--vscode-testing-iconPassed, #4ec94e) !important;
+  color: var(--vscode-editor-background, #1e1e1e) !important;
+  border-color: var(--vscode-testing-iconPassed, #4ec94e) !important;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 30%, transparent) !important;
+}
+
 /* ─── Inputs ─── */
 input[type="text"],
 input[type="number"] {
