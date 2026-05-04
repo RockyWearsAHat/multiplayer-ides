@@ -21,6 +21,26 @@ class MultiplayerViewProvider {
           return;
         }
 
+        if (message.type === "host-session") {
+          await this._handlers.onHostSession();
+          return;
+        }
+
+        if (message.type === "join-session") {
+          await this._handlers.onJoinSession();
+          return;
+        }
+
+        if (message.type === "end-session") {
+          await this._handlers.onEndSession();
+          return;
+        }
+
+        if (message.type === "copy-invite") {
+          await this._handlers.onCopyInvite(message.kind || "private");
+          return;
+        }
+
         if (message.type === "send-chat") {
           await this._handlers.onSendChat(message.text || "");
           return;
@@ -62,100 +82,311 @@ function getWebviewHtml() {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
-      :root {
-        color-scheme: light dark;
-      }
       body {
         margin: 0;
         font-family: var(--vscode-font-family);
         color: var(--vscode-foreground);
-        background: var(--vscode-editor-background);
+        background: var(--vscode-sideBar-background);
       }
+
       .wrap {
         display: grid;
-        gap: 12px;
-        padding: 12px;
+        gap: 10px;
+        padding: 10px;
       }
+
       .card {
         border: 1px solid var(--vscode-panel-border);
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 10px;
-        background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-button-background) 12%);
+        background: var(--vscode-editor-background);
       }
+
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        letter-spacing: 0.2px;
+        font-weight: 700;
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--vscode-panel-border);
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .status-copy {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+      }
+
       .row {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
       }
-      input, button {
+
+      .row.stack {
+        flex-direction: column;
+      }
+
+      input,
+      button,
+      textarea {
         font: inherit;
       }
+
       input {
         flex: 1;
-        min-width: 220px;
-        padding: 8px;
+        min-width: 120px;
+        padding: 7px 8px;
+        border-radius: 6px;
+        border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+        background: var(--vscode-input-background);
+        color: var(--vscode-input-foreground);
       }
+
       button {
-        padding: 8px 12px;
+        padding: 7px 10px;
         border: 0;
         border-radius: 6px;
         background: var(--vscode-button-background);
         color: var(--vscode-button-foreground);
+        cursor: pointer;
       }
-      #chat {
-        max-height: 220px;
-        overflow: auto;
+
+      button:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+
+      button.secondary {
+        background: var(--vscode-button-secondaryBackground, var(--vscode-editor-inactiveSelectionBackground));
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+      }
+
+      button.secondary:hover {
+        background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+      }
+
+      button.warn {
+        background: var(--vscode-inputValidation-errorBackground, #7e2f2f);
+        color: var(--vscode-inputValidation-errorForeground, #ffffff);
+      }
+
+      button:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+
+      .btn-grid {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .hint {
+        margin: 6px 0 0;
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .field {
         display: grid;
         gap: 6px;
       }
+
+      .field label {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .field input {
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      #chat {
+        max-height: 160px;
+        overflow: auto;
+        display: grid;
+        gap: 6px;
+        padding-right: 4px;
+      }
+
+      .chat-line {
+        font-size: 12px;
+        line-height: 1.4;
+        background: var(--vscode-editor-inactiveSelectionBackground);
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+
+      .chat-line .meta {
+        color: var(--vscode-descriptionForeground);
+        font-size: 11px;
+      }
+
       #participants {
         margin: 0;
         padding-left: 18px;
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
       }
+
+      .participants-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .counter {
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .video-grid {
+        margin-top: 8px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .video-card {
+        border: 1px solid var(--vscode-panel-border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .video-card .label {
+        padding: 4px 8px;
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        border-bottom: 1px solid var(--vscode-panel-border);
+      }
+
       video {
         width: 100%;
-        max-height: 220px;
-        border-radius: 8px;
+        height: 120px;
+        display: block;
         background: #000;
       }
+
       .muted {
         opacity: 0.75;
+      }
+
+      .empty {
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
       }
     </style>
   </head>
   <body>
     <main class="wrap">
       <section class="card">
-        <strong>Participants</strong>
+        <div class="status-row">
+          <h3>Session</h3>
+          <span id="modePill" class="pill">Idle</span>
+        </div>
+        <p id="sessionStatus" class="status-copy">Ready</p>
+      </section>
+
+      <section class="card">
+        <h3>Quick Actions</h3>
+        <div class="btn-grid">
+          <button id="hostSession">Host</button>
+          <button id="joinSession" class="secondary">Join</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="endSession" class="warn" style="width:100%">End Session</button>
+        </div>
+        <p class="hint">Host and Join open guided prompts so setup stays fast and safe.</p>
+      </section>
+
+      <section class="card">
+        <h3>Invites</h3>
+        <div class="field">
+          <label for="privateInvite">Private Invite</label>
+          <input id="privateInvite" readonly placeholder="Host a session to generate links" />
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="copyPrivateInvite" class="secondary">Copy Private</button>
+        </div>
+        <div class="field" style="margin-top:8px">
+          <label for="openInvite">Open Invite</label>
+          <input id="openInvite" readonly placeholder="Optional shareable invite" />
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="copyOpenInvite" class="secondary">Copy Open</button>
+          <span id="invitePolicy" class="pill">Policy: n/a</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="participants-head">
+          <h3>Participants</h3>
+          <span id="participantCount" class="counter">0 connected</span>
+        </div>
         <ul id="participants"></ul>
       </section>
 
       <section class="card">
-        <strong>Chat</strong>
+        <h3>Team Chat</h3>
         <div id="chat"></div>
-        <div class="row" style="margin-top:8px">
-          <input id="chatInput" placeholder="Message" />
+        <div class="row stack" style="margin-top:8px">
+          <input id="chatInput" placeholder="Send a message to everyone in this session" />
           <button id="sendChat">Send</button>
         </div>
       </section>
 
       <section class="card">
-        <strong>Voice + Video</strong>
+        <h3>Voice + Video</h3>
         <div class="row" style="margin-top:8px">
           <button id="startCall">Start Call</button>
-          <button id="toggleAudio">Mute/Unmute</button>
-          <button id="toggleVideo">Camera On/Off</button>
+          <button id="toggleAudio" class="secondary">Mute/Unmute</button>
+          <button id="toggleVideo" class="secondary">Camera On/Off</button>
         </div>
         <p id="callStatus" class="muted">Idle</p>
-        <div class="row">
-          <video id="localVideo" muted autoplay playsinline></video>
-          <video id="remoteVideo" autoplay playsinline></video>
+        <div class="video-grid">
+          <div class="video-card">
+            <div class="label">You</div>
+            <video id="localVideo" muted autoplay playsinline></video>
+          </div>
+          <div class="video-card">
+            <div class="label">Remote</div>
+            <video id="remoteVideo" autoplay playsinline></video>
+          </div>
         </div>
       </section>
     </main>
 
     <script>
       const vscode = acquireVsCodeApi();
+      const sessionStatus = document.getElementById("sessionStatus");
+      const modePill = document.getElementById("modePill");
+      const hostSessionButton = document.getElementById("hostSession");
+      const joinSessionButton = document.getElementById("joinSession");
+      const endSessionButton = document.getElementById("endSession");
+      const privateInvite = document.getElementById("privateInvite");
+      const openInvite = document.getElementById("openInvite");
+      const copyPrivateInviteButton = document.getElementById("copyPrivateInvite");
+      const copyOpenInviteButton = document.getElementById("copyOpenInvite");
+      const invitePolicy = document.getElementById("invitePolicy");
+      const participantCount = document.getElementById("participantCount");
       const chat = document.getElementById("chat");
       const chatInput = document.getElementById("chatInput");
       const sendChat = document.getElementById("sendChat");
@@ -172,6 +403,37 @@ function getWebviewHtml() {
       let pc = null;
       let audioEnabled = true;
       let videoEnabled = true;
+      let sessionState = {
+        mode: "idle",
+        status: "Ready",
+        inviteOnlyMode: null,
+        openInviteLink: "",
+        privateInviteLink: ""
+      };
+
+      function updateSessionState(nextState) {
+        sessionState = { ...sessionState, ...(nextState || {}) };
+        const mode = sessionState.mode || "idle";
+
+        modePill.textContent = mode === "host" ? "Hosting" : mode === "guest" ? "Guest" : "Idle";
+        sessionStatus.textContent = sessionState.status || "Ready";
+
+        privateInvite.value = sessionState.privateInviteLink || "";
+        openInvite.value = sessionState.openInviteLink || "";
+
+        invitePolicy.textContent = sessionState.inviteOnlyMode === null
+          ? "Policy: n/a"
+          : "Policy: " + (sessionState.inviteOnlyMode ? "Invite-only" : "Open");
+
+        const isHost = mode === "host";
+        const canEnd = mode !== "idle";
+
+        hostSessionButton.disabled = mode !== "idle";
+        joinSessionButton.disabled = mode !== "idle";
+        endSessionButton.disabled = !canEnd;
+        copyPrivateInviteButton.disabled = !isHost || !sessionState.privateInviteLink;
+        copyOpenInviteButton.disabled = !isHost || !sessionState.openInviteLink;
+      }
 
       async function ensurePeerConnection() {
         if (pc) {
@@ -266,7 +528,19 @@ function getWebviewHtml() {
 
       function renderParticipants(list) {
         participants.innerHTML = "";
-        for (const item of list || []) {
+
+        const items = list || [];
+        participantCount.textContent = items.length + " connected";
+
+        if (!items.length) {
+          const li = document.createElement("li");
+          li.className = "empty";
+          li.textContent = "No one connected yet.";
+          participants.append(li);
+          return;
+        }
+
+        for (const item of items) {
           const li = document.createElement("li");
           li.textContent = item.name + " (" + item.role + ")";
           participants.append(li);
@@ -275,10 +549,38 @@ function getWebviewHtml() {
 
       function appendChat(message) {
         const line = document.createElement("div");
-        line.textContent = "[" + message.timestamp + "] " + message.user + ": " + message.text;
+        line.className = "chat-line";
+        const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : "now";
+        line.innerHTML = "<div class=\"meta\">"
+          + timestamp
+          + " · "
+          + (message.user || "Unknown")
+          + "</div><div>"
+          + (message.text || "")
+          + "</div>";
         chat.append(line);
         chat.scrollTop = chat.scrollHeight;
       }
+
+      hostSessionButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "host-session" });
+      });
+
+      joinSessionButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "join-session" });
+      });
+
+      endSessionButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "end-session" });
+      });
+
+      copyPrivateInviteButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "private" });
+      });
+
+      copyOpenInviteButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "open" });
+      });
 
       sendChat.addEventListener("click", () => {
         const text = chatInput.value.trim();
@@ -340,11 +642,19 @@ function getWebviewHtml() {
           return;
         }
 
+        if (data.type === "session-state") {
+          updateSessionState(data.payload || {});
+          return;
+        }
+
         if (data.type === "status") {
           callStatus.textContent = data.payload;
+          updateSessionState({ status: data.payload || "Ready" });
         }
       });
 
+      updateSessionState({ mode: "idle", status: "Ready" });
+      renderParticipants([]);
       vscode.postMessage({ type: "panel-ready" });
     </script>
   </body>

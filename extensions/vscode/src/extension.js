@@ -10,6 +10,15 @@ let statusBar = null;
 let panel = null;
 let sessionService = null;
 let suppressChanges = false;
+let latestParticipants = [];
+
+const sessionUiState = {
+  mode: "idle",
+  status: "Ready",
+  inviteOnlyMode: null,
+  openInviteLink: "",
+  privateInviteLink: ""
+};
 
 const docStates = new Map();
 
@@ -34,8 +43,33 @@ function activate(context) {
     onRtcSignal: (signal) => {
       sessionService.sendRtcSignal(signal);
     },
+    onHostSession: async () => {
+      await hostFromPrompt();
+      openPanel();
+    },
+    onJoinSession: async () => {
+      await joinFromPrompt();
+      openPanel();
+    },
+    onEndSession: async () => {
+      await endCurrentSession();
+    },
+    onCopyInvite: async (kind) => {
+      const invite = kind === "open"
+        ? sessionUiState.openInviteLink
+        : sessionUiState.privateInviteLink;
+
+      if (!invite) {
+        vscode.window.showWarningMessage("No invite link available yet");
+        return;
+      }
+
+      await vscode.env.clipboard.writeText(invite);
+      vscode.window.showInformationMessage(`${kind === "open" ? "Open" : "Private"} invite copied`);
+    },
     onPanelReady: () => {
-      sendPanelMessage(panel, { type: "status", payload: statusBar?.text || "Multiplayer: ready" });
+      pushSessionStateToPanel();
+      sendPanelMessage(panel, { type: "participants", payload: latestParticipants });
     }
   });
 
@@ -49,6 +83,8 @@ function activate(context) {
 
   sessionService.on("status", (entry) => {
     setStatus(entry.message);
+    sessionUiState.status = entry.message;
+    pushSessionStateToPanel();
     sendPanelMessage(panel, { type: "status", payload: entry.message });
   });
 
@@ -66,10 +102,16 @@ function activate(context) {
   });
 
   sessionService.on("join-rejected", (reason) => {
+    sessionUiState.mode = "idle";
+    sessionUiState.openInviteLink = "";
+    sessionUiState.privateInviteLink = "";
+    pushSessionStateToPanel();
     vscode.window.showErrorMessage(reason || "Join rejected");
   });
 
   sessionService.on("join-accepted", async (workspacePath) => {
+    sessionUiState.mode = "guest";
+    pushSessionStateToPanel();
     if (workspacePath) {
       const uri = vscode.Uri.file(workspacePath);
       await vscode.commands.executeCommand("vscode.openFolder", uri, false);
@@ -78,6 +120,7 @@ function activate(context) {
   });
 
   sessionService.on("participants", (participants) => {
+    latestParticipants = participants;
     sendPanelMessage(panel, { type: "participants", payload: participants });
   });
 
@@ -119,10 +162,7 @@ function activate(context) {
     vscode.commands.registerCommand("multiplayer.hostSession", hostFromPrompt),
     vscode.commands.registerCommand("multiplayer.joinSession", joinFromPrompt),
     vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel()),
-    vscode.commands.registerCommand("multiplayer.endSession", async () => {
-      await sessionService.endSession();
-      setStatus("Session stopped");
-    }),
+    vscode.commands.registerCommand("multiplayer.endSession", endCurrentSession),
     vscode.commands.registerCommand("multiplayer.toggleInviteOnly", async () => {
       const enabled = await vscode.window.showQuickPick(
         [
@@ -169,6 +209,12 @@ async function hostFromPrompt() {
     inviteOnlyMode
   });
 
+  sessionUiState.mode = "host";
+  sessionUiState.inviteOnlyMode = result.inviteOnlyMode;
+  sessionUiState.openInviteLink = result.openInviteLink;
+  sessionUiState.privateInviteLink = result.privateInviteLink;
+  pushSessionStateToPanel();
+
   await vscode.env.clipboard.writeText(result.privateInviteLink);
 
   const copyChoice = await vscode.window.showInformationMessage(
@@ -198,6 +244,23 @@ async function joinFromPrompt() {
   const displayName = await askDisplayName();
   sessionService.setDisplayName(displayName);
   await sessionService.joinSession({ inviteText, cloneIfMissing: true });
+
+  sessionUiState.mode = "guest";
+  sessionUiState.openInviteLink = "";
+  sessionUiState.privateInviteLink = "";
+  pushSessionStateToPanel();
+}
+
+async function endCurrentSession() {
+  await sessionService.endSession();
+  latestParticipants = [];
+  sessionUiState.mode = "idle";
+  sessionUiState.status = "Session stopped";
+  sessionUiState.inviteOnlyMode = null;
+  sessionUiState.openInviteLink = "";
+  sessionUiState.privateInviteLink = "";
+  pushSessionStateToPanel();
+  setStatus("Session stopped");
 }
 
 async function askDisplayName() {
@@ -427,6 +490,10 @@ function setStatus(message) {
   if (statusBar) {
     statusBar.text = `Multiplayer: ${message}`;
   }
+}
+
+function pushSessionStateToPanel() {
+  sendPanelMessage(panel, { type: "session-state", payload: { ...sessionUiState } });
 }
 
 async function deactivate() {
