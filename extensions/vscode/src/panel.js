@@ -1186,10 +1186,37 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         b?.addEventListener("click", () => vscode.postMessage({ type: "end-session" }));
       }
 
-      copyPrivateBtn?.addEventListener("click", () => vscode.postMessage({ type: "copy-invite", kind: "private" }));
-      copyOpenBtn?.addEventListener("click", () => vscode.postMessage({ type: "copy-invite", kind: "open" }));
-      copyPublicCodeBtn?.addEventListener("click", () => vscode.postMessage({ type: "copy-invite", kind: "public-code" }));
-      copyPublicTokenBtn?.addEventListener("click", () => vscode.postMessage({ type: "copy-invite", kind: "public-token" }));
+      function addCopyFeedback(btn, label = "Copied!") {
+        if (!btn) return;
+        const originalText = btn.textContent;
+        btn.textContent = label;
+        btn.disabled = true;
+        btn.classList.add("copied");
+        setTimeout(() => {
+          if (btn) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+            btn.classList.remove("copied");
+          }
+        }, 2000);
+      }
+
+      copyPrivateBtn?.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "private" });
+        addCopyFeedback(copyPrivateBtn);
+      });
+      copyOpenBtn?.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "open" });
+        addCopyFeedback(copyOpenBtn);
+      });
+      copyPublicCodeBtn?.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "public-code" });
+        addCopyFeedback(copyPublicCodeBtn);
+      });
+      copyPublicTokenBtn?.addEventListener("click", () => {
+        vscode.postMessage({ type: "copy-invite", kind: "public-token" });
+        addCopyFeedback(copyPublicTokenBtn);
+      });
       toggleOpenInviteBtn?.addEventListener("click", () => {
         isOpenInviteVisible = !isOpenInviteVisible;
         updateSessionState({});
