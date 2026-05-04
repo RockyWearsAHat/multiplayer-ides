@@ -1116,22 +1116,43 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
       hostCancelBtn?.addEventListener("click", () => hostForm?.classList.remove("open"));
       joinCancelBtn?.addEventListener("click", () => joinForm?.classList.remove("open"));
 
-      hostSubmitBtn?.addEventListener("click", () => {
+      hostSubmitBtn?.addEventListener("click", async () => {
         const name = (hostNameInput?.value || "").trim();
         const port = Number(hostPortInput?.value) || 3700;
         const inviteOnly = hostInviteOnly?.checked ?? true;
-        if (!name) { hostNameInput?.focus(); return; }
+        if (!name) {
+          hostNameInput?.focus();
+          hostNameInput?.style.borderColor = "var(--vscode-errorForeground)";
+          setTimeout(() => { if (hostNameInput) hostNameInput.style.borderColor = ""; }, 2000);
+          return;
+        }
+        if (port < 1024 || port > 65535) {
+          hostPortInput?.focus();
+          hostPortInput?.style.borderColor = "var(--vscode-errorForeground)";
+          setTimeout(() => { if (hostPortInput) hostPortInput.style.borderColor = ""; }, 2000);
+          return;
+        }
         vscode.postMessage({ type: "host-session", name, port, inviteOnly });
         hostForm?.classList.remove("open");
         hostSubmitBtn.disabled = true;
         hostSubmitBtn.textContent = "Starting…";
       });
 
-      joinSubmitBtn?.addEventListener("click", () => {
+      joinSubmitBtn?.addEventListener("click", async () => {
         const name = (joinNameInput?.value || "").trim();
         const inviteText = (joinInviteInput?.value || "").trim();
-        if (!name) { joinNameInput?.focus(); return; }
-        if (!inviteText) { joinInviteInput?.focus(); return; }
+        if (!name) {
+          joinNameInput?.focus();
+          joinNameInput?.style.borderColor = "var(--vscode-errorForeground)";
+          setTimeout(() => { if (joinNameInput) joinNameInput.style.borderColor = ""; }, 2000);
+          return;
+        }
+        if (!inviteText) {
+          joinInviteInput?.focus();
+          joinInviteInput?.style.borderColor = "var(--vscode-errorForeground)";
+          setTimeout(() => { if (joinInviteInput) joinInviteInput.style.borderColor = ""; }, 2000);
+          return;
+        }
         vscode.postMessage({ type: "join-session", name, inviteText });
         joinForm?.classList.remove("open");
         joinSubmitBtn.disabled = true;
@@ -1163,26 +1184,34 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
 
       sendChatBtn.addEventListener("click", () => {
         const text = chatInput.value.trim();
-        if (!text) { return; }
+        if (!text) {
+          chatInput.focus();
+          return;
+        }
         vscode.postMessage({ type: "send-chat", text });
         chatInput.value = "";
+        chatInput.focus();
       });
       chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { sendChatBtn.click(); } });
 
       startCallBtn.addEventListener("click", () => {
+        if (startCallBtn.disabled) return;
         if (callActive) {
           // Toggle off — ask extension to stop the helper
+          startCallBtn.disabled = true;
           vscode.postMessage({ type: "end-call" });
           setCallState("Ending call…", false);
           startCallBtn.textContent = "Start Call";
           callActive = false;
           callDockEl?.classList.remove("call-active");
           setCamWarn(false);
+          setTimeout(() => { startCallBtn.disabled = false; }, 500);
         } else {
           // Start the companion helper (it owns the OS permission prompt)
+          startCallBtn.disabled = true;
+          startCallBtn.textContent = "Starting…";
           vscode.postMessage({ type: "start-call" });
           setCallState("Starting call helper…", false);
-          startCallBtn.disabled = true;
         }
       });
 
@@ -1207,18 +1236,26 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         setCallState("Idle", false);
       });
       toggleAudioBtn.addEventListener("click", () => {
+        if (toggleAudioBtn.disabled) return;
         audioEnabled = !audioEnabled;
-        vscode.postMessage({ type: "call-mute", audio: audioEnabled });
+        toggleAudioBtn.setAttribute("aria-pressed", String(!audioEnabled));
+        toggleAudioBtn.classList.toggle("active", !audioEnabled);
         toggleAudioBtn.textContent = audioEnabled ? "Mute" : "Unmute";
+        vscode.postMessage({ type: "call-mute", audio: audioEnabled });
       });
       toggleVideoBtn.addEventListener("click", () => {
+        if (toggleVideoBtn.disabled) return;
         videoEnabled = !videoEnabled;
-        vscode.postMessage({ type: "call-video", enabled: videoEnabled });
+        toggleVideoBtn.setAttribute("aria-pressed", String(!videoEnabled));
+        toggleVideoBtn.classList.toggle("active", !videoEnabled);
         toggleVideoBtn.textContent = videoEnabled ? "Cam Off" : "Cam On";
+        vscode.postMessage({ type: "call-video", enabled: videoEnabled });
       });
       zoomRange.addEventListener("input", applyVideoZoom);
       hoverZoomToggle.addEventListener("click", () => {
         hoverZoomEnabled = !hoverZoomEnabled;
+        hoverZoomToggle.setAttribute("aria-pressed", String(hoverZoomEnabled));
+        hoverZoomToggle.classList.toggle("active", hoverZoomEnabled);
         hoverZoomToggle.textContent = "Hover Zoom: " + (hoverZoomEnabled ? "On" : "Off");
         applyVideoZoom();
       });
