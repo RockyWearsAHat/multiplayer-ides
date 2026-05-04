@@ -1,3 +1,5 @@
+ONLY EVER CHECKPOINT WITH MESSAGE: PARAMETER INSTEAD OF CONTEXT PARAMETER. DO NOT EVER CHECKPOINT WITH CONTEXT PARAMETER IT CALLS A SUBAGENT AND BURNS USAGE QUICKLY.
+
 # Multiplayer Code Prototype Context
 
 - Project type: Node.js monorepo (VS Code extension first, optional desktop app, shared package)
