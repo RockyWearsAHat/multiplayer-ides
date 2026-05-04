@@ -1,0 +1,14 @@
+{
+  "name": "multiplayer-call-helper",
+  "productName": "Multiplayer Code Helper",
+  "version": "1.0.0",
+  "description": "Standalone call companion for Multiplayer Code — owns mic/camera permissions separately from VS Code",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^29.0.0",
+    "ws": "^8.18.0"
+  }
+}

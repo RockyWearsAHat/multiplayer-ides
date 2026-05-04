@@ -47,6 +47,10 @@ npm run package
 
 This creates `multiplayer-code-bridge.vsix`.
 
+The VSIX now bundles the standalone `Multiplayer Code Helper` companion app,
+including its runtime dependencies, so no separate `apps/call-helper` install
+step is required for extension users.
+
 Install with:
 
 ```bash

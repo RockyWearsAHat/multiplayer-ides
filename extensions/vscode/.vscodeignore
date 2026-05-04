@@ -1,6 +1,5 @@
 .vscode/**
 scripts/**
-src/**
+dist/**
 **/.DS_Store
 **/*.vsix
-node_modules/**

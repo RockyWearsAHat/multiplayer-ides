@@ -9,6 +9,7 @@ const WebSocket = require("ws");
 const {
   EVENTS,
   createSessionId,
+  createPublicJoinCode,
   createInviteSecret,
   toInviteCode,
   toInviteLink,
@@ -44,7 +45,7 @@ class SessionService extends EventEmitter {
     await this.endSession();
 
     this.mode = "host";
-    this.sessionId = createSessionId();
+    this.sessionId = createPublicJoinCode();
     this.hostPort = port;
     this.inviteOnlyMode = Boolean(inviteOnlyMode);
     this.inviteSecret = createInviteSecret();
@@ -68,6 +69,7 @@ class SessionService extends EventEmitter {
       port,
       sessionId: this.sessionId
     };
+    const quickJoinToken = `${host}:${port}#${this.sessionId}`;
 
     const openCode = toInviteCode(baseInvite);
     const privateCode = toInviteCode({
@@ -86,6 +88,8 @@ class SessionService extends EventEmitter {
     return {
       openInviteLink: toInviteLink(openCode),
       privateInviteLink: toInviteLink(privateCode),
+      publicJoinCode: this.sessionId,
+      publicJoinToken: quickJoinToken,
       sessionId: this.sessionId,
       inviteOnlyMode: this.inviteOnlyMode
     };
