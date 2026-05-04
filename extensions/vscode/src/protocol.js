@@ -1,4 +1,4 @@
-const { randomUUID, randomBytes } = require("node:crypto");
+const { randomUUID, randomBytes, randomInt } = require("node:crypto");
 
 const EVENTS = {
   JOIN_REQUEST: "join-request",
@@ -16,6 +16,10 @@ const EVENTS = {
 
 function createSessionId() {
   return randomUUID();
+}
+
+function createPublicJoinCode() {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 function createInviteSecret() {
@@ -42,6 +46,30 @@ function parseInviteInput(value) {
 
   const trimmed = value.trim();
 
+  const endpointCodeMatch = trimmed.match(/^([^#\s]+)#(\d{6})$/);
+  if (endpointCodeMatch) {
+    const endpoint = endpointCodeMatch[1];
+    const joinCode = endpointCodeMatch[2];
+    const hostPortMatch = endpoint.match(/^(.+):(\d{2,5})$/);
+    if (!hostPortMatch) {
+      return null;
+    }
+
+    return {
+      host: hostPortMatch[1],
+      port: Number(hostPortMatch[2]),
+      sessionId: joinCode
+    };
+  }
+
+  if (/^\d{6}$/.test(trimmed)) {
+    return {
+      host: "127.0.0.1",
+      port: 3700,
+      sessionId: trimmed
+    };
+  }
+
   try {
     if (trimmed.includes("://")) {
       const url = new URL(trimmed);
@@ -64,6 +92,7 @@ function parseInviteInput(value) {
 module.exports = {
   EVENTS,
   createSessionId,
+  createPublicJoinCode,
   createInviteSecret,
   toInviteCode,
   toInviteLink,

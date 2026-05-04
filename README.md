@@ -33,8 +33,16 @@ Legacy path: desktop host/join app is still available.
 ## Architecture
 
 - `apps/desktop`: legacy desktop host/join flow
+- `apps/call-helper`: standalone companion app for mic/camera permissions and WebRTC media
 - `extensions/vscode`: in-IDE host/join, approvals, sync, chat, and panel UX
 - `packages/shared`: shared event names, transfer events, and invite encoding/decoding helpers
+
+Adapter direction (any IDE):
+
+- Keep transport/session/call logic in shared packages and helper processes
+- Keep IDE integrations as thin adapters (`extensions/<ide-name>`)
+- Current adapter: VS Code
+- Planned adapters: Cursor, JetBrains, Neovim, Zed, Sublime
 
 Current in-IDE flow:
 
@@ -81,6 +89,9 @@ npm run package
 code --install-extension multiplayer-code-bridge.vsix
 ```
 
+No separate `apps/call-helper` install step is required for extension users; the
+VSIX bundles the standalone helper runtime.
+
 - In VS Code run: `Multiplayer: Start Live Collaboration`
 
 ## In-IDE Commands
@@ -115,7 +126,7 @@ code --install-extension multiplayer-code-bridge.vsix
 
 ## Prototype limitations
 
-- VS Code bridge only (other IDEs detected but not integrated yet)
+- VS Code is the only completed adapter today (core architecture is adapter-ready for other IDEs)
 - Single host + one guest path is the tested scope
 - Local/LAN direct WebSocket transport only
 - Basic cursor rendering only for visible editors

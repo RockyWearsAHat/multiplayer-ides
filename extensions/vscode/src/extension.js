@@ -1,6 +1,10 @@
 const path = require("node:path");
+const net = require("node:net");
+const { spawn, spawnSync } = require("node:child_process");
+const fs = require("node:fs");
 const vscode = require("vscode");
 const Y = require("yjs");
+const { WebSocketServer } = require("ws");
 
 const { EVENTS } = require("./protocol");
 const { SessionService } = require("./session-service");
@@ -13,50 +17,443 @@ let suppressChanges = false;
 let latestParticipants = [];
 let latestChatMessages = [];
 
+// ── CallHelperManager ─────────────────────────────────────────────────────────
+// Manages the lifecycle of the standalone companion helper process that handles
+// camera/microphone access with its own macOS app identity.
+//
+// Privacy guarantee: all media access flows through the helper — the user sees
+// a real OS-level permission dialog for "Multiplayer Code Helper", not VS Code.
+// ─────────────────────────────────────────────────────────────────────────────
+class CallHelperManager {
+  constructor({ helperDir, onState, onRtcSignal }) {
+    this._helperDir    = helperDir;
+    this._onState      = onState;
+    this._onRtcSignal  = onRtcSignal;
+    this._server       = null;
+    this._socket       = null;
+    this._process      = null;
+    this._active       = false;
+    this._stopping     = false;
+    this._stderrLines  = [];
+    this._startTimeout = null;
+  }
+
+  isActive() { return this._active; }
+
+  /** Send a message to the helper renderer (via main). */
+  sendToHelper(msg) {
+    if (this._socket && this._socket.readyState === 1 /* OPEN */) {
+      this._socket.send(JSON.stringify(msg));
+    }
+  }
+
+  /** Start the helper process. Resolves when the IPC server is listening. */
+  async startCall() {
+    if (this._active) {
+      // Already running — end the call instead (toggle)
+      this.stopCall();
+      return;
+    }
+
+    const mainScript = path.join(this._helperDir, "main.js");
+    const launchSpec = this._resolveElectronLaunch(mainScript);
+
+    if (!fs.existsSync(this._helperDir) || !fs.existsSync(mainScript) || !launchSpec) {
+      this._onState({
+        status: "not-installed",
+        text: "Helper not installed — run: cd apps/call-helper && npm install",
+      });
+      return;
+    }
+
+    this._active = true;
+    this._stopping = false;
+    this._stderrLines = [];
+    this._clearStartTimeout();
+    this._onState({ status: "starting", text: "Starting call helper…" });
+
+    try {
+      const port = await this._getFreePort();
+      const childEnv = { ...process.env };
+      delete childEnv.ELECTRON_RUN_AS_NODE;
+
+      this._server = new WebSocketServer({ host: "127.0.0.1", port });
+      this._scheduleStartTimeout();
+      this._server.on("connection", (sock) => {
+        this._socket = sock;
+
+        sock.on("message", (data) => {
+          try { this._handleHelperMessage(JSON.parse(data.toString())); } catch { /* ignore malformed */ }
+        });
+
+        sock.on("close", () => {
+          this._socket = null;
+          if (this._active) {
+            this._active = false;
+            this._onState({ status: "ended", text: "Idle", connected: false });
+          }
+        });
+      });
+
+      this._process = spawn(
+        launchSpec.command,
+        [...launchSpec.args, `--ipc-port=${port}`],
+        { stdio: ["ignore", "pipe", "pipe"], env: childEnv }
+      );
+
+      this._process.stdout?.on("data", (chunk) => {
+        this._appendStderrLine(String(chunk));
+      });
+      this._process.stderr?.on("data", (chunk) => {
+        this._appendStderrLine(String(chunk));
+      });
+
+      this._process.on("exit", (code, signal) => {
+        this._process = null;
+
+        // When launched via `open` on macOS, the `open` command itself exits
+        // immediately after handing off to LaunchServices — the actual Electron
+        // process is not our direct child.  In that case we should NOT treat the
+        // launcher exit as a helper crash; lifecycle is tracked via the WebSocket
+        // connection instead.
+        if (launchSpec.usesOpen) { return; }
+
+        if (!this._stopping && this._active) {
+          const extra = this._stderrLines.length ? ` — ${this._stderrLines.join(" | ")}` : "";
+          this._onState({
+            status: "error",
+            text: `Helper exited early (${signal || code || "unknown"})${extra}`,
+            connected: false,
+          });
+        } else if (this._active) {
+          this._active = false;
+          this._onState({ status: "ended", text: "Idle", connected: false });
+        }
+
+        this._active = false;
+        this._stopping = false;
+        this._cleanup();
+      });
+
+      this._process.on("error", (err) => {
+        this._active = false;
+        this._stopping = false;
+        this._onState({ status: "error", text: "Helper failed to start: " + err.message });
+        this._cleanup();
+      });
+
+    } catch (err) {
+      this._active = false;
+      this._onState({ status: "error", text: "Call setup error: " + err.message });
+      this._cleanup();
+    }
+  }
+
+  /** Stop the helper and clean up. */
+  stopCall() {
+    this._active = false;
+    this._stopping = true;
+    this.sendToHelper({ type: "end-call" });
+    setTimeout(() => {
+      this._process?.kill();
+      this._process = null;
+      this._cleanup();
+    }, 400);
+    this._onState({ status: "ended", text: "Idle", connected: false });
+  }
+
+  /** Dispose all resources — call when extension deactivates. */
+  dispose() {
+    this._active = false;
+    this._stopping = true;
+    this._process?.kill();
+    this._process = null;
+    this._cleanup();
+  }
+
+  _cleanup() {
+    this._clearStartTimeout();
+    try { this._server?.close(); } catch { /* ignore */ }
+    this._server = null;
+    this._socket = null;
+  }
+
+  _handleHelperMessage(msg) {
+    switch (msg.type) {
+      case "helper-ready":
+        // Helper connected — tell it to start the call immediately
+        this._onState({ status: "starting", text: "Requesting camera and microphone permission…" });
+        this.sendToHelper({ type: "start-call" });
+        break;
+      case "media-ready":
+        this._clearStartTimeout();
+        this._onState({
+          status: "media-ready",
+          text: msg.label || "Media ready",
+          hasAudio: msg.hasAudio,
+          hasVideo: msg.hasVideo,
+        });
+        break;
+      case "media-denied":
+        this._clearStartTimeout();
+        this._onState({ status: "denied", text: "Permission denied — grant access to 'Multiplayer Code Helper' in System Settings" });
+        break;
+      case "media-error":
+        this._clearStartTimeout();
+        this._onState({ status: "error", text: "Media error: " + (msg.message || "unknown") });
+        break;
+      case "call-state":
+        this._clearStartTimeout();
+        this._onState({ status: "call", text: msg.text, connected: Boolean(msg.connected) });
+        break;
+      case "call-ended":
+        this._clearStartTimeout();
+        this._active = false;
+        this._onState({ status: "ended", text: "Idle", connected: false });
+        this._cleanup();
+        break;
+      case "rtc-signal":
+        this._onRtcSignal(msg.signal);
+        break;
+    }
+  }
+
+  async _getFreePort() {
+    return new Promise((resolve, reject) => {
+      const srv = net.createServer();
+      srv.listen(0, "127.0.0.1", () => {
+        const { port } = srv.address();
+        srv.close(() => resolve(port));
+      });
+      srv.on("error", reject);
+    });
+  }
+
+  _scheduleStartTimeout() {
+    this._clearStartTimeout();
+    this._startTimeout = setTimeout(() => {
+      if (!this._active) {
+        return;
+      }
+      this._active = false;
+      this._stopping = false;
+      this._onState({
+        status: "error",
+        text: "Timed out waiting for call helper. Click Start Call to retry.",
+        connected: false,
+      });
+      this._cleanup();
+    }, 120000);
+  }
+
+  _clearStartTimeout() {
+    if (this._startTimeout) {
+      clearTimeout(this._startTimeout);
+      this._startTimeout = null;
+    }
+  }
+
+  _ensureMacHelperIdentity(electronRoot) {
+    const distDir = path.join(electronRoot, "dist");
+    const defaultBundle = path.join(distDir, "Electron.app");
+    const helperBundle = path.join(distDir, "Multiplayer Code Helper.app");
+
+    if (!fs.existsSync(distDir)) {
+      return null;
+    }
+
+    // Ensure both packaged and dev helper paths present a stable helper name.
+    if (fs.existsSync(defaultBundle) && !fs.existsSync(helperBundle)) {
+      try {
+        fs.renameSync(defaultBundle, helperBundle);
+      } catch {
+        // Fallback: copy when rename is blocked by filesystem semantics.
+        try {
+          fs.cpSync(defaultBundle, helperBundle, { recursive: true });
+        } catch {
+          // Keep default bundle path as last resort.
+        }
+      }
+    }
+
+    const appBundle = fs.existsSync(helperBundle) ? helperBundle : defaultBundle;
+    if (!fs.existsSync(appBundle)) {
+      return null;
+    }
+
+    const plistPath = path.join(appBundle, "Contents", "Info.plist");
+    const plistPatches = {
+      CFBundleDisplayName: "Multiplayer Code Helper",
+      CFBundleName: "Multiplayer Code Helper",
+      CFBundleIdentifier: "com.multiplayercode.helper",
+      NSCameraUsageDescription: "Multiplayer Code Helper uses your camera for video calls.",
+      NSMicrophoneUsageDescription: "Multiplayer Code Helper uses your microphone for voice calls.",
+    };
+
+    if (fs.existsSync(plistPath)) {
+      for (const [key, value] of Object.entries(plistPatches)) {
+        spawnSync("plutil", ["-replace", key, "-string", value, plistPath], { stdio: "ignore" });
+      }
+
+      // Re-sign after mutating Info.plist so LaunchServices/TCC sees a valid app.
+      spawnSync("codesign", ["--force", "--sign", "-", appBundle], {
+        stdio: "ignore"
+      });
+    }
+
+    return appBundle;
+  }
+
+  _resolveElectronLaunch(mainScript) {
+    const electronRoot = path.join(this._helperDir, "node_modules", "electron");
+
+    if (process.platform === "darwin") {
+      const appBundle = this._ensureMacHelperIdentity(electronRoot);
+
+      // On macOS we MUST launch via `open -a` so LaunchServices owns the process
+      // launch.  When spawned directly as a child of the VS Code extension host,
+      // macOS TCC attributes camera/mic requests to the responsible parent process
+      // (VS Code Insiders) rather than to our helper's bundle identity, regardless
+      // of what bundle ID is in Info.plist.  Launching through `open` makes macOS
+      // treat the helper as a user-initiated process with its own TCC identity so
+      // the permission dialog reads "Multiplayer Code Helper would like to access
+      // your camera" instead of attributing it to VS Code.
+      if (appBundle && fs.existsSync(appBundle)) {
+        return {
+          command: "open",
+          // -g         — launch in background (avoid focus/Space jump)
+          // <app path> — explicit bundle path, avoids name-based resolution
+          // --args     — everything after this is forwarded to the app as argv
+          args: ["-g", appBundle, "--args", mainScript],
+          usesOpen: true,
+        };
+      }
+    }
+
+    // Linux / Windows — spawn the binary directly
+    const directExecutable = process.platform === "win32"
+      ? path.join(electronRoot, "dist", "electron.exe")
+      : path.join(electronRoot, "dist", "electron");
+
+    if (fs.existsSync(directExecutable)) {
+      return {
+        command: directExecutable,
+        args: [mainScript],
+      };
+    }
+
+    const electronCli = path.join(electronRoot, "cli.js");
+    if (fs.existsSync(electronCli)) {
+      return {
+        command: process.execPath,
+        args: [electronCli, mainScript],
+      };
+    }
+
+    return null;
+  }
+
+  _appendStderrLine(textChunk) {
+    const lines = textChunk
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!lines.length) return;
+
+    this._stderrLines.push(...lines);
+    if (this._stderrLines.length > 6) {
+      this._stderrLines = this._stderrLines.slice(-6);
+    }
+  }
+}
+
+let callHelper = null;
+
 const sessionUiState = {
   mode: "idle",
   status: "Ready",
   inviteOnlyMode: null,
   openInviteLink: "",
-  privateInviteLink: ""
+  privateInviteLink: "",
+  publicJoinCode: "",
+  publicJoinToken: ""
 };
 
 const docStates = new Map();
-
-const remoteCursorType = vscode.window.createTextEditorDecorationType({
-  borderWidth: "1px",
-  borderStyle: "solid",
-  borderColor: "#4fc3f7",
-  borderRadius: "2px"
-});
+let remoteCursorType = null;
 
 function activate(context) {
+  remoteCursorType = vscode.window.createTextEditorDecorationType({
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#4fc3f7",
+    borderRadius: "2px"
+  });
+
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.text = "Multiplayer: idle";
   statusBar.show();
 
   sessionService = new SessionService(getWorkspaceRoot);
 
+  // Resolve helper path from installed extension first, then local monorepo dev fallback.
+  const packagedHelperDir = path.join(context.extensionPath, "call-helper");
+  const devHelperDir = path.join(context.extensionPath, "..", "..", "apps", "call-helper");
+  const helperDir = fs.existsSync(packagedHelperDir) ? packagedHelperDir : devHelperDir;
+
+  // Initialise the call helper manager — the standalone process that owns mic/camera
+  // permissions separately from VS Code, with its own macOS app identity.
+  callHelper = new CallHelperManager({
+    helperDir,
+    onState: (state) => {
+      sendPanelMessage(panel, { type: "call-helper-state", ...state });
+    },
+    onRtcSignal: (signal) => {
+      // Outgoing signal from helper → relay to remote peer via session transport
+      sessionService.sendRtcSignal(signal);
+    },
+  });
+  context.subscriptions.push({ dispose: () => callHelper.dispose() });
+
   panel = new MultiplayerViewProvider({
     onSendChat: async (text) => {
       await sessionService.sendChat(text);
     },
-    onRtcSignal: (signal) => {
-      sessionService.sendRtcSignal(signal);
+    onRtcSignal: () => {
+      // Panel no longer handles WebRTC — signals flow through the call helper
     },
-    onHostSession: async () => {
-      await hostFromPrompt();
+    onStartCall: async () => {
+      await callHelper.startCall();
+    },
+    onEndCall: () => {
+      callHelper.stopCall();
+    },
+    onCallMute: (audio) => {
+      callHelper.sendToHelper({ type: "mute", audio });
+    },
+    onCallVideo: (enabled) => {
+      callHelper.sendToHelper({ type: "video", enabled });
+    },
+    onHostSession: async ({ name, port, inviteOnly } = {}) => {
+      await hostFromPanel({ name, port, inviteOnly });
       openPanel();
     },
-    onJoinSession: async () => {
-      await joinFromPrompt();
+    onJoinSession: async ({ name, inviteText } = {}) => {
+      await joinFromPanel({ name, inviteText });
       openPanel();
     },
     onEndSession: async () => {
       await endCurrentSession();
     },
+    onApproveJoin: async (requestId) => {
+      await sessionService.decideJoinRequest({ requestId, accepted: true });
+    },
+    onRejectJoin: async (requestId) => {
+      await sessionService.decideJoinRequest({ requestId, accepted: false });
+    },
     onOpenChatTab: () => {
-      openChatTab();
+      openChatPopout();
     },
     onOpenBrowserTab: (initialView) => {
       openBrowserTab(initialView);
@@ -64,7 +461,11 @@ function activate(context) {
     onCopyInvite: async (kind) => {
       const invite = kind === "open"
         ? sessionUiState.openInviteLink
-        : sessionUiState.privateInviteLink;
+        : kind === "public-code"
+          ? sessionUiState.publicJoinCode
+          : kind === "public-token"
+            ? sessionUiState.publicJoinToken
+            : sessionUiState.privateInviteLink;
 
       if (!invite) {
         vscode.window.showWarningMessage("No invite link available yet");
@@ -72,7 +473,14 @@ function activate(context) {
       }
 
       await vscode.env.clipboard.writeText(invite);
-      vscode.window.showInformationMessage(`${kind === "open" ? "Open" : "Private"} invite copied`);
+      const label = kind === "open"
+        ? "Open invite link"
+        : kind === "public-code"
+          ? "Public join code"
+          : kind === "public-token"
+            ? "Public quick-join token"
+            : "Private invite link";
+      vscode.window.showInformationMessage(`${label} copied`);
     },
     onPanelReady: async () => {
       pushSessionStateToPanel();
@@ -83,11 +491,14 @@ function activate(context) {
 
   context.subscriptions.push(
     statusBar,
-    remoteCursorType,
     vscode.window.registerWebviewViewProvider("multiplayer.sidePanel", panel, {
       webviewOptions: { retainContextWhenHidden: true }
     })
   );
+
+  if (remoteCursorType) {
+    context.subscriptions.push(remoteCursorType);
+  }
 
   sessionService.on("status", (entry) => {
     setStatus(entry.message);
@@ -97,16 +508,25 @@ function activate(context) {
   });
 
   sessionService.on("join-request", async (request) => {
+    // Push inline approval card to all panel surfaces
+    sendPanelMessage(panel, {
+      type: "join-request",
+      payload: { requestId: request.requestId, displayName: request.displayName }
+    });
+
+    // Also show a VS Code notification so it's visible even if panel is hidden
     const choice = await vscode.window.showInformationMessage(
       `${request.displayName} wants to join your session`,
       "Approve",
       "Reject"
     );
 
-    await sessionService.decideJoinRequest({
-      requestId: request.requestId,
-      accepted: choice === "Approve"
-    });
+    if (choice) {
+      await sessionService.decideJoinRequest({
+        requestId: request.requestId,
+        accepted: choice === "Approve"
+      });
+    }
   });
 
   sessionService.on("join-rejected", (reason) => {
@@ -143,7 +563,12 @@ function activate(context) {
   });
 
   sessionService.on("rtc-signal", (message) => {
-    sendPanelMessage(panel, { type: "rtc-signal", payload: message.signal });
+    // Incoming signal from remote peer is handled only by the standalone helper.
+    // Never route RTC into the VS Code webview — this prevents VS Code-level
+    // camera/mic permission prompts.
+    if (callHelper?.isActive()) {
+      callHelper.sendToHelper({ type: "rtc-signal", signal: message.signal });
+    }
   });
 
   sessionService.on("sync-message", async (message) => {
@@ -176,8 +601,8 @@ function activate(context) {
     vscode.commands.registerCommand("multiplayer.hostSession", hostFromPrompt),
     vscode.commands.registerCommand("multiplayer.joinSession", joinFromPrompt),
     vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel()),
-    vscode.commands.registerCommand("multiplayer.openWorkspaceTab", () => openBrowserTab("overview")),
-    vscode.commands.registerCommand("multiplayer.openChatTab", () => openChatTab()),
+    vscode.commands.registerCommand("multiplayer.openWorkspaceTab", () => openBrowserTab("session")),
+    vscode.commands.registerCommand("multiplayer.openChatTab", () => openChatPopout()),
     vscode.commands.registerCommand("multiplayer.endSession", endCurrentSession),
     vscode.commands.registerCommand("multiplayer.toggleInviteOnly", async () => {
       const enabled = await vscode.window.showQuickPick(
@@ -201,6 +626,52 @@ function activate(context) {
   );
 
   setStatus("Ready");
+}
+
+async function hostFromPanel({ name, port, inviteOnly } = {}) {
+  const displayName = name || (await askDisplayName());
+  if (!displayName) { return; }
+
+  sessionService.setDisplayName(displayName);
+
+  const inviteOnlyMode = inviteOnly !== undefined
+    ? Boolean(inviteOnly)
+    : Boolean(vscode.workspace.getConfiguration("multiplayer").get("inviteOnlyDefault", true));
+
+  const result = await sessionService.hostSession({
+    port: Number(port) || 3700,
+    inviteOnlyMode
+  });
+
+  sessionUiState.mode = "host";
+  sessionUiState.inviteOnlyMode = result.inviteOnlyMode;
+  sessionUiState.openInviteLink = result.openInviteLink;
+  sessionUiState.privateInviteLink = result.privateInviteLink;
+  sessionUiState.publicJoinCode = result.publicJoinCode || "";
+  sessionUiState.publicJoinToken = result.publicJoinToken || "";
+  pushSessionStateToPanel();
+
+  await vscode.env.clipboard.writeText(result.privateInviteLink);
+  vscode.window.showInformationMessage(
+    `Hosting started on port ${Number(port) || 3700}. Private invite copied.`
+  );
+}
+
+async function joinFromPanel({ name, inviteText } = {}) {
+  if (!inviteText) { return; }
+
+  const displayName = name || (await askDisplayName());
+  if (!displayName) { return; }
+
+  sessionService.setDisplayName(displayName);
+  await sessionService.joinSession({ inviteText, cloneIfMissing: true });
+
+  sessionUiState.mode = "guest";
+  sessionUiState.openInviteLink = "";
+  sessionUiState.privateInviteLink = "";
+  sessionUiState.publicJoinCode = "";
+  sessionUiState.publicJoinToken = "";
+  pushSessionStateToPanel();
 }
 
 async function hostFromPrompt() {
@@ -229,6 +700,8 @@ async function hostFromPrompt() {
   sessionUiState.inviteOnlyMode = result.inviteOnlyMode;
   sessionUiState.openInviteLink = result.openInviteLink;
   sessionUiState.privateInviteLink = result.privateInviteLink;
+  sessionUiState.publicJoinCode = result.publicJoinCode || "";
+  sessionUiState.publicJoinToken = result.publicJoinToken || "";
   pushSessionStateToPanel();
 
   await vscode.env.clipboard.writeText(result.privateInviteLink);
@@ -264,6 +737,8 @@ async function joinFromPrompt() {
   sessionUiState.mode = "guest";
   sessionUiState.openInviteLink = "";
   sessionUiState.privateInviteLink = "";
+  sessionUiState.publicJoinCode = "";
+  sessionUiState.publicJoinToken = "";
   pushSessionStateToPanel();
 }
 
@@ -276,6 +751,8 @@ async function endCurrentSession() {
   sessionUiState.inviteOnlyMode = null;
   sessionUiState.openInviteLink = "";
   sessionUiState.privateInviteLink = "";
+  sessionUiState.publicJoinCode = "";
+  sessionUiState.publicJoinToken = "";
   pushSessionStateToPanel();
   setStatus("Session stopped");
 }
@@ -293,18 +770,18 @@ function openPanel() {
   vscode.commands.executeCommand("multiplayer.sidePanel.focus");
 }
 
-function openBrowserTab(initialView = "overview") {
+function openBrowserTab(initialView = "session") {
+  // remap legacy view name so the editor tab respects the renamed tab
+  const viewMap = { invites: "session", overview: "session" };
+  const view = viewMap[initialView] || initialView;
   panel.openEditorPanel({
-    initialView,
-    title: "Multiplayer Workspace"
+    initialView: view,
+    title: "Multiplayer"
   });
 }
 
-function openChatTab() {
-  panel.openEditorPanel({
-    initialView: "chat",
-    title: "Multiplayer Team Chat"
-  });
+function openChatPopout() {
+  panel.openChatPopoutPanel();
 }
 
 async function refreshChatHistory() {
@@ -469,7 +946,9 @@ async function renderRemoteCursor(message) {
   }
 
   const position = new vscode.Position(message.active.line || 0, message.active.character || 0);
-  editor.setDecorations(remoteCursorType, [new vscode.Range(position, position)]);
+  if (remoteCursorType) {
+    editor.setDecorations(remoteCursorType, [new vscode.Range(position, position)]);
+  }
 }
 
 async function replaceEntireDocument(editor, text) {
