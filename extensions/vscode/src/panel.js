@@ -1088,22 +1088,39 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         const card = document.createElement("div");
         card.className = "approval-card";
         card.dataset.requestId = requestId;
+        card.setAttribute("role", "status");
+        card.setAttribute("aria-label", escapeHtml(displayName || "Someone") + " wants to join");
         card.innerHTML =
           "<div class='approval-name'>" + escapeHtml(displayName || "Someone") + "</div>" +
           "<div class='approval-sub'>Wants to join your session</div>" +
           "<div class='approval-actions'>" +
-            "<button class='primary flex-1 approve-btn'>Approve</button>" +
-            "<button class='danger reject-btn'>Reject</button>" +
+            "<button class='primary flex-1 approve-btn' aria-label='Approve " + escapeHtml(displayName || "Someone") + "'>Approve</button>" +
+            "<button class='danger reject-btn' aria-label='Reject " + escapeHtml(displayName || "Someone") + "'>Reject</button>" +
           "</div>";
 
-        card.querySelector(".approve-btn").addEventListener("click", () => {
+        const approveBtn = card.querySelector(".approve-btn");
+        const rejectBtn = card.querySelector(".reject-btn");
+
+        function handleApproval() {
+          approveBtn.disabled = true;
+          rejectBtn.disabled = true;
+          approveBtn.textContent = "Approving…";
           vscode.postMessage({ type: "approve-join", requestId });
-          card.remove();
-        });
-        card.querySelector(".reject-btn").addEventListener("click", () => {
+          setTimeout(() => { card.classList.add("card-out"); }, 50);
+          setTimeout(() => { card.remove(); }, 350);
+        }
+
+        function handleRejection() {
+          approveBtn.disabled = true;
+          rejectBtn.disabled = true;
+          rejectBtn.textContent = "Rejecting…";
           vscode.postMessage({ type: "reject-join", requestId });
-          card.remove();
-        });
+          setTimeout(() => { card.classList.add("card-out"); }, 50);
+          setTimeout(() => { card.remove(); }, 350);
+        }
+
+        approveBtn.addEventListener("click", handleApproval);
+        rejectBtn.addEventListener("click", handleRejection);
 
         approvalsEl.appendChild(card);
         setActiveTab("session");
