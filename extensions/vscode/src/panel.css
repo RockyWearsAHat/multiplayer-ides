@@ -61,17 +61,18 @@ body {
   cursor: pointer;
   white-space: nowrap;
   border-radius: var(--mp-radius);
-  transition: all 140ms ease;
+  transition: all 140ms cubic-bezier(0.2, 0, 0.38, 0.9);
 }
 .tab:hover {
   color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
-  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, var(--vscode-focusBorder)) 14%, transparent);
+  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, var(--vscode-focusBorder)) 16%, transparent);
 }
 .tab.active {
   color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
   border-color: var(--vscode-focusBorder);
-  background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
   font-weight: 600;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 20%, transparent) inset;
 }
 
 .tab-badge {
@@ -158,19 +159,21 @@ body {
   letter-spacing: 0.5px;
   flex-shrink: 0;
   opacity: 0.6;
-  transition: all 140ms;
+  transition: all 140ms cubic-bezier(0.2, 0, 0.38, 0.9);
 }
 .mode-badge.host {
   color: var(--vscode-testing-iconPassed, #4ec94e);
   opacity: 1;
   border-color: var(--vscode-testing-iconPassed, #4ec94e);
-  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 12%, transparent);
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 14%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 15%, transparent);
 }
 .mode-badge.guest {
   color: var(--vscode-charts-orange, #e8a63a);
   opacity: 1;
   border-color: var(--vscode-charts-orange, #e8a63a);
-  background: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 12%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 14%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 15%, transparent);
 }
 
 /* ─── Views ─── */
