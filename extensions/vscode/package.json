@@ -2,7 +2,7 @@
   "name": "multiplayer-code-bridge",
   "displayName": "Multiplayer Code Bridge",
   "description": "VS Code bridge for standalone Multiplayer Code desktop sessions",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "publisher": "local-prototype",
   "repository": {
     "type": "git",
