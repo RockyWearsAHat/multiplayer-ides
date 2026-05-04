@@ -20,11 +20,31 @@
   "main": "./src/extension.js",
   "files": [
     "src/**",
+    "media/**",
+    "node_modules/**",
     "README.md",
     "LICENSE",
     "package.json"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "multiplayer",
+          "title": "Multiplayer",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "multiplayer": [
+        {
+          "type": "webview",
+          "id": "multiplayer.sidePanel",
+          "name": "Multiplayer"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "multiplayer.easyStart",

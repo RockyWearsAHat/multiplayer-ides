@@ -4,7 +4,7 @@ const Y = require("yjs");
 
 const { EVENTS } = require("./protocol");
 const { SessionService } = require("./session-service");
-const { createPanel, sendPanelMessage } = require("./panel");
+const { MultiplayerViewProvider, sendPanelMessage } = require("./panel");
 
 let statusBar = null;
 let panel = null;
@@ -25,9 +25,27 @@ function activate(context) {
   statusBar.text = "Multiplayer: idle";
   statusBar.show();
 
-  context.subscriptions.push(statusBar, remoteCursorType);
+  context.subscriptions.push(
+    statusBar,
+    remoteCursorType,
+    vscode.window.registerWebviewViewProvider("multiplayer.sidePanel", panel, {
+      webviewOptions: { retainContextWhenHidden: true }
+    })
+  );
 
   sessionService = new SessionService(getWorkspaceRoot);
+
+  panel = new MultiplayerViewProvider({
+    onSendChat: async (text) => {
+      await sessionService.sendChat(text);
+    },
+    onRtcSignal: (signal) => {
+      sessionService.sendRtcSignal(signal);
+    },
+    onPanelReady: () => {
+      sendPanelMessage(panel, { type: "status", payload: statusBar?.text || "Multiplayer: ready" });
+    }
+  });
 
   sessionService.on("status", (entry) => {
     setStatus(entry.message);
@@ -95,12 +113,12 @@ function activate(context) {
       } else if (action.value === "join") {
         await joinFromPrompt();
       } else {
-        openPanel(context);
+        openPanel();
       }
     }),
     vscode.commands.registerCommand("multiplayer.hostSession", hostFromPrompt),
     vscode.commands.registerCommand("multiplayer.joinSession", joinFromPrompt),
-    vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel(context)),
+    vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel()),
     vscode.commands.registerCommand("multiplayer.endSession", async () => {
       await sessionService.endSession();
       setStatus("Session stopped");
@@ -164,7 +182,7 @@ async function hostFromPrompt() {
   }
 
   if (copyChoice === "Open Panel") {
-    openPanel({ subscriptions: [] });
+    openPanel();
   }
 }
 
@@ -191,27 +209,8 @@ async function askDisplayName() {
   return name || "Anonymous";
 }
 
-function openPanel(context) {
-  if (panel) {
-    panel.reveal(vscode.ViewColumn.Beside);
-    return;
-  }
-
-  panel = createPanel(context, {
-    onSendChat: async (text) => {
-      await sessionService.sendChat(text);
-    },
-    onRtcSignal: (signal) => {
-      sessionService.sendRtcSignal(signal);
-    },
-    onPanelReady: () => {
-      sendPanelMessage(panel, { type: "status", payload: statusBar?.text || "Multiplayer: ready" });
-    }
-  });
-
-  panel.onDidDispose(() => {
-    panel = null;
-  });
+function openPanel() {
+  vscode.commands.executeCommand("multiplayer.sidePanel.focus");
 }
 
 function onDidOpenDocument(document) {

@@ -1,46 +1,56 @@
 const vscode = require("vscode");
 
-function createPanel(context, handlers) {
-  const panel = vscode.window.createWebviewPanel(
-    "multiplayer.panel",
-    "Multiplayer",
-    vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true
-    }
-  );
+class MultiplayerViewProvider {
+  constructor(handlers) {
+    this._handlers = handlers;
+    this._view = null;
+  }
 
-  panel.webview.html = getWebviewHtml();
+  resolveWebviewView(webviewView) {
+    this._view = webviewView;
 
-  panel.webview.onDidReceiveMessage(async (message) => {
-    if (!message?.type) {
-      return;
-    }
+    webviewView.webview.options = {
+      enableScripts: true
+    };
 
-    if (message.type === "send-chat") {
-      await handlers.onSendChat(message.text || "");
-      return;
-    }
+    webviewView.webview.html = getWebviewHtml();
 
-    if (message.type === "rtc-signal") {
-      handlers.onRtcSignal(message.signal);
-      return;
-    }
+    webviewView.webview.onDidReceiveMessage(async (message) => {
+      if (!message?.type) {
+        return;
+      }
 
-    if (message.type === "panel-ready") {
-      handlers.onPanelReady();
-    }
-  });
+      if (message.type === "send-chat") {
+        await this._handlers.onSendChat(message.text || "");
+        return;
+      }
 
-  return panel;
+      if (message.type === "rtc-signal") {
+        this._handlers.onRtcSignal(message.signal);
+        return;
+      }
+
+      if (message.type === "panel-ready") {
+        this._handlers.onPanelReady();
+      }
+    });
+
+    webviewView.onDidDispose(() => {
+      this._view = null;
+    });
+  }
+
+  sendMessage(payload) {
+    this._view?.webview.postMessage(payload);
+  }
+
+  reveal() {
+    this._view?.show(true);
+  }
 }
 
-function sendPanelMessage(panel, payload) {
-  if (!panel) {
-    return;
-  }
-  panel.webview.postMessage(payload);
+function sendPanelMessage(provider, payload) {
+  provider?.sendMessage(payload);
 }
 
 function getWebviewHtml() {
@@ -340,6 +350,6 @@ function getWebviewHtml() {
 }
 
 module.exports = {
-  createPanel,
+  MultiplayerViewProvider,
   sendPanelMessage
 };

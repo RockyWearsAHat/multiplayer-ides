@@ -20,7 +20,7 @@ function run(command, args, cwd) {
 }
 
 function copyRequiredFiles() {
-  const requiredPaths = ["src", "scripts", "package.json", "README.md", "LICENSE"];
+  const requiredPaths = ["src", "media", "scripts", "package.json", "README.md", "LICENSE"];
 
   for (const relPath of requiredPaths) {
     const source = path.join(extensionRoot, relPath);
@@ -36,7 +36,7 @@ function cleanup() {
 try {
   copyRequiredFiles();
 
-  run("npm", ["install"], tempRoot);
+  run("npm", ["install", "--omit=dev"], tempRoot);
   run("npx", ["@vscode/vsce", "package", "-o", outFile, "--allow-missing-repository"], tempRoot);
 
   fs.copyFileSync(path.join(tempRoot, outFile), path.join(extensionRoot, outFile));
