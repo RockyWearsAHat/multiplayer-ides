@@ -321,13 +321,13 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
   <body class="${surfaceClass}">
 
     <!-- Tab bar styled like VS Code panel tabs -->
-    <nav class="toolbar" role="tablist">
-      <button class="tab active" data-tab="session" role="tab" aria-selected="true">Session</button>
-      <button class="tab" data-tab="chat" role="tab" aria-selected="false">
+    <nav class="toolbar" role="tablist" aria-label="Multiplayer views">
+      <button id="tab-session" class="tab active" type="button" data-tab="session" role="tab" aria-selected="true" aria-controls="view-session">Session</button>
+      <button id="tab-chat" class="tab" type="button" data-tab="chat" role="tab" aria-selected="false" aria-controls="view-chat">
         Chat
         <span id="chatBadge" class="tab-badge" aria-label="unread messages"></span>
       </button>
-      <button class="tab" data-tab="call" role="tab" aria-selected="false">Call</button>
+      <button id="tab-call" class="tab" type="button" data-tab="call" role="tab" aria-selected="false" aria-controls="view-call">Call</button>
     </nav>
 
     <!-- Persistent session status strip (like VS Code status bar, but inline) -->
@@ -522,7 +522,13 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
             <span class="helper-window-status" id="helperWindowStatus">Idle</span>
           </div>
           <div class="helper-window-body">
-            <div class="helper-window-page" id="helperWindowPage">test</div>
+            <div class="helper-window-page" id="helperWindowPage">
+              <div class="helper-window-copy">
+                <span class="helper-window-eyebrow">Call Helper</span>
+                <strong>Ready when you are.</strong>
+                <p>Start a call to launch the dedicated media helper and keep camera and microphone permissions separate from VS Code.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -569,6 +575,7 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
       const vscode = acquireVsCodeApi();
 
       // ── DOM refs ───────────────────────────────────────────────
+      const toolbarEl = document.querySelector(".toolbar");
       const tabButtons = [...document.querySelectorAll(".tab")];
       const views = [...document.querySelectorAll(".view")];
 
@@ -706,6 +713,7 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
           const active = btn.dataset.tab === activeTabButton;
           btn.classList.toggle("active", active);
           btn.setAttribute("aria-selected", active ? "true" : "false");
+          btn.tabIndex = active ? 0 : -1;
         }
         for (const v of views) {
           v.classList.toggle("active", v.dataset.view === name);
@@ -720,9 +728,50 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         updateChatPopoutControls();
       }
 
-      for (const btn of tabButtons) {
-        btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
+      function activateToolbarTab(tabName) {
+        setActiveTab(tabName);
       }
+
+      toolbarEl?.addEventListener("click", (event) => {
+        const button = event.target.closest(".tab[data-tab]");
+        if (!button) {
+          return;
+        }
+
+        event.preventDefault();
+        activateToolbarTab(button.dataset.tab);
+      });
+
+      toolbarEl?.addEventListener("keydown", (event) => {
+        const currentIndex = tabButtons.findIndex((button) => button.dataset.tab === activeTab);
+        if (currentIndex === -1) {
+          return;
+        }
+
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          const nextIndex = (currentIndex + direction + tabButtons.length) % tabButtons.length;
+          const nextButton = tabButtons[nextIndex];
+          activateToolbarTab(nextButton.dataset.tab);
+          nextButton.focus();
+          return;
+        }
+
+        if (event.key === "Home") {
+          event.preventDefault();
+          activateToolbarTab(tabButtons[0].dataset.tab);
+          tabButtons[0].focus();
+          return;
+        }
+
+        if (event.key === "End") {
+          event.preventDefault();
+          const lastButton = tabButtons[tabButtons.length - 1];
+          activateToolbarTab(lastButton.dataset.tab);
+          lastButton.focus();
+        }
+      });
 
       // ── Session state rendering ────────────────────────────────
       function updateSessionState(next) {
