@@ -346,15 +346,27 @@ input[type="number"] {
   padding: 0 11px;
   width: 100%;
   min-width: 0;
-  transition: all 140ms;
+  transition: all 140ms cubic-bezier(0.2, 0, 0.38, 0.9);
 }
 input[type="text"]:focus,
 input[type="number"]:focus {
   outline: none;
   border-color: var(--vscode-focusBorder);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder) 20%, transparent);
+  background: color-mix(in srgb, var(--vscode-input-background) 102%, var(--vscode-focusBorder));
+}
+input[type="text"]:disabled,
+input[type="number"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--vscode-input-background) 95%, transparent);
 }
 input[type="text"]::placeholder { color: var(--vscode-input-placeholderForeground); }
+input[type="text"][style*="border-color: var(--vscode-errorForeground)"],
+input[type="number"][style*="border-color: var(--vscode-errorForeground)"] {
+  border-color: var(--vscode-errorForeground) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-errorForeground) 20%, transparent) !important;
+}
 input[type="range"] {
   width: 100%;
   accent-color: var(--vscode-focusBorder);
@@ -378,10 +390,13 @@ input[type="range"] {
   padding: 8px 10px;
   border-radius: var(--mp-radius);
   font-size: 12px;
-  transition: all 120ms ease;
+  transition: all 120ms cubic-bezier(0.2, 0, 0.38, 0.9);
+  border: 1px solid transparent;
 }
 .list-item:hover {
   background: color-mix(in srgb, var(--vscode-list-hoverBackground) 70%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 30%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .list-item .item-name {
   flex: 1;
