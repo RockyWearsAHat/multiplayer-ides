@@ -3,71 +3,116 @@ const vscode = require("vscode");
 class MultiplayerViewProvider {
   constructor(handlers) {
     this._handlers = handlers;
-    this._view = null;
+    this._sidebarView = null;
+    this._surfaces = new Map();
+    this._nextSurfaceId = 1;
   }
 
   resolveWebviewView(webviewView) {
     try {
-      this._view = webviewView;
-
-      webviewView.webview.options = {
-        enableScripts: true
-      };
-
-      webviewView.webview.html = getWebviewHtml();
-
-      webviewView.webview.onDidReceiveMessage(async (message) => {
-        if (!message?.type) {
-          return;
-        }
-
-        if (message.type === "host-session") {
-          await this._handlers.onHostSession();
-          return;
-        }
-
-        if (message.type === "join-session") {
-          await this._handlers.onJoinSession();
-          return;
-        }
-
-        if (message.type === "end-session") {
-          await this._handlers.onEndSession();
-          return;
-        }
-
-        if (message.type === "copy-invite") {
-          await this._handlers.onCopyInvite(message.kind || "private");
-          return;
-        }
-
-        if (message.type === "send-chat") {
-          await this._handlers.onSendChat(message.text || "");
-          return;
-        }
-
-        if (message.type === "rtc-signal") {
-          this._handlers.onRtcSignal(message.signal);
-          return;
-        }
-
-        if (message.type === "panel-ready") {
-          this._handlers.onPanelReady();
-        }
+      this._sidebarView = webviewView;
+      this._attachSurface({
+        surfaceId: "sidebar",
+        webview: webviewView.webview,
+        initialView: "overview"
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       vscode.window.showErrorMessage(`Multiplayer panel failed to load: ${message}`);
-      throw error;
+      webviewView.webview.html = getErrorWebviewHtml(message);
     }
   }
 
+  openEditorPanel({ initialView = "overview", title } = {}) {
+    const panel = vscode.window.createWebviewPanel(
+      "multiplayer.editorPanel",
+      title || "Multiplayer Workspace",
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true
+      }
+    );
+
+    const surfaceId = `editor-${this._nextSurfaceId++}`;
+    this._attachSurface({
+      surfaceId,
+      webview: panel.webview,
+      initialView
+    });
+
+    panel.onDidDispose(() => {
+      this._surfaces.delete(surfaceId);
+    });
+
+    return panel;
+  }
+
   sendMessage(payload) {
-    this._view?.webview.postMessage(payload);
+    for (const webview of this._surfaces.values()) {
+      webview.postMessage(payload);
+    }
   }
 
   reveal() {
-    this._view?.show(true);
+    this._sidebarView?.show(true);
+  }
+
+  _attachSurface({ surfaceId, webview, initialView }) {
+    webview.options = { enableScripts: true };
+    webview.html = getWebviewHtml({ initialView });
+
+    this._surfaces.set(surfaceId, webview);
+
+    webview.onDidReceiveMessage(async (message) => {
+      if (!message?.type) {
+        return;
+      }
+
+      if (message.type === "host-session") {
+        await this._handlers.onHostSession();
+        return;
+      }
+
+      if (message.type === "join-session") {
+        await this._handlers.onJoinSession();
+        return;
+      }
+
+      if (message.type === "end-session") {
+        await this._handlers.onEndSession();
+        return;
+      }
+
+      if (message.type === "copy-invite") {
+        await this._handlers.onCopyInvite(message.kind || "private");
+        return;
+      }
+
+      if (message.type === "send-chat") {
+        await this._handlers.onSendChat(message.text || "");
+        return;
+      }
+
+      if (message.type === "rtc-signal") {
+        this._handlers.onRtcSignal(message.signal);
+        return;
+      }
+
+      if (message.type === "open-chat-tab") {
+        this._handlers.onOpenChatTab();
+        return;
+      }
+
+      if (message.type === "open-browser-tab") {
+        this._handlers.onOpenBrowserTab(message.view || "overview");
+        return;
+      }
+
+      if (message.type === "panel-ready") {
+        await this._handlers.onPanelReady(surfaceId);
+      }
+    });
   }
 }
 
@@ -75,7 +120,7 @@ function sendPanelMessage(provider, payload) {
   provider?.sendMessage(payload);
 }
 
-function getWebviewHtml() {
+function getErrorWebviewHtml(message) {
   return `<!doctype html>
 <html>
   <head>
@@ -84,31 +129,164 @@ function getWebviewHtml() {
     <style>
       body {
         margin: 0;
+        padding: 12px;
         font-family: var(--vscode-font-family);
         color: var(--vscode-foreground);
         background: var(--vscode-sideBar-background);
       }
 
-      .wrap {
-        display: grid;
-        gap: 12px;
+      .error-card {
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 30%, transparent);
+        background: color-mix(in srgb, var(--vscode-errorForeground) 10%, transparent);
         padding: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="error-card">
+      <strong>Multiplayer Panel Failed To Load</strong>
+      <p>${escapeHtml(message)}</p>
+    </section>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getWebviewHtml({ initialView = "overview" } = {}) {
+  const safeInitialView = ["overview", "invites", "chat", "call"].includes(initialView)
+    ? initialView
+    : "overview";
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--vscode-font-family);
+        font-size: var(--vscode-font-size, 13px);
+        color: var(--vscode-foreground);
+        background: var(--vscode-sideBar-background);
+      }
+
+      .header {
+        padding: 12px;
+        border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border) 55%, transparent);
+      }
+
+      .title {
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        margin-top: 2px;
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .row {
+        display: flex;
+        gap: 6px;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        padding: 10px;
+      }
+
+      .tab {
+        height: 28px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 65%, transparent);
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--vscode-editor-background) 70%, transparent);
+        color: var(--vscode-descriptionForeground);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .tab.active {
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+        border-color: transparent;
+      }
+
+      .top-actions {
+        padding: 0 10px 10px;
+      }
+
+      .top-actions button,
+      button {
+        font: inherit;
+        height: 30px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+      }
+
+      button.secondary {
+        background: color-mix(in srgb, var(--vscode-editor-background) 72%, transparent);
+        color: var(--vscode-foreground);
+        border-color: color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+      }
+
+      button.warn {
+        background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+        color: var(--vscode-errorForeground);
+        border-color: color-mix(in srgb, var(--vscode-errorForeground) 32%, transparent);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .panel {
+        display: none;
+        padding: 0 10px 12px;
+      }
+
+      .panel.active {
+        display: block;
       }
 
       .card {
-        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
-        border-radius: 12px;
-        padding: 12px;
-        background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-sideBar-background) 10%);
-        box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-editor-background) 66%, transparent);
       }
 
-      .card h3 {
+      .section-title {
         margin: 0 0 8px;
-        font-size: 11px;
-        letter-spacing: 0.6px;
+        font-size: 10px;
         text-transform: uppercase;
-        font-weight: 700;
+        letter-spacing: 0.7px;
+        color: var(--vscode-descriptionForeground);
       }
 
       .status-row {
@@ -118,295 +296,305 @@ function getWebviewHtml() {
         gap: 8px;
       }
 
-      .pill {
-        display: inline-flex;
+      .status-main {
+        display: flex;
         align-items: center;
-        height: 22px;
-        padding: 0 8px;
-        border-radius: 999px;
-        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 85%, transparent);
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--vscode-descriptionForeground) 60%, transparent);
+      }
+
+      .dot.host {
+        background: var(--vscode-textLink-foreground);
+      }
+
+      .dot.guest {
+        background: var(--vscode-charts-orange);
+      }
+
+      .status-label {
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .status-sub {
+        margin-top: 2px;
         font-size: 11px;
         color: var(--vscode-descriptionForeground);
-        background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-sideBar-background) 20%);
       }
 
-      .pill[data-mode="host"] {
+      .pill {
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 65%, transparent);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+
+      .pill.host {
         color: var(--vscode-textLink-foreground);
-        border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
       }
 
-      .pill[data-mode="guest"] {
+      .pill.guest {
         color: var(--vscode-charts-orange);
-        border-color: color-mix(in srgb, var(--vscode-charts-orange) 45%, transparent);
       }
 
-      .status-copy {
-        margin: 8px 0 0;
-        font-size: 12px;
+      .stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field-label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
         color: var(--vscode-descriptionForeground);
       }
 
-      .row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-
-      .row.stack {
-        flex-direction: column;
-      }
-
-      input,
-      button,
-      textarea {
-        font: inherit;
-      }
-
-      input {
-        flex: 1;
-        min-width: 120px;
-        padding: 7px 8px;
+      input[type="text"] {
+        width: 100%;
+        height: 30px;
         border-radius: 6px;
-        border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+        border: 1px solid var(--vscode-input-border, color-mix(in srgb, var(--vscode-panel-border) 90%, transparent));
         background: var(--vscode-input-background);
         color: var(--vscode-input-foreground);
+        padding: 0 9px;
       }
 
-      button {
-        padding: 8px 11px;
-        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 80%, transparent);
-        border-radius: 6px;
-        background: color-mix(in srgb, var(--vscode-editor-background) 75%, var(--vscode-sideBar-background) 25%);
-        color: var(--vscode-foreground);
-        cursor: pointer;
-      }
-
-      button:hover {
-        background: color-mix(in srgb, var(--vscode-list-hoverBackground) 75%, var(--vscode-editor-background) 25%);
-      }
-
-      button.primary {
-        border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 50%, transparent);
-        background: color-mix(in srgb, var(--vscode-textLink-foreground) 88%, var(--vscode-editor-background) 12%);
-        color: var(--vscode-editor-background);
-      }
-
-      button.primary:hover {
-        background: color-mix(in srgb, var(--vscode-textLink-foreground) 78%, var(--vscode-editor-background) 22%);
-      }
-
-      button.secondary {
-        background: color-mix(in srgb, var(--vscode-editor-background) 85%, var(--vscode-sideBar-background) 15%);
-        color: var(--vscode-foreground);
-      }
-
-      button.secondary:hover {
-        background: color-mix(in srgb, var(--vscode-list-hoverBackground) 80%, var(--vscode-editor-background) 20%);
-      }
-
-      button.warn {
-        border-color: color-mix(in srgb, var(--vscode-errorForeground) 55%, transparent);
-        background: color-mix(in srgb, var(--vscode-errorForeground) 20%, transparent);
-        color: var(--vscode-errorForeground);
-      }
-
-      button.warn:hover {
-        background: color-mix(in srgb, var(--vscode-errorForeground) 30%, transparent);
-      }
-
-      button:disabled {
-        cursor: default;
-        opacity: 0.5;
-        border-color: color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
-      }
-
-      .btn-grid {
+      .participants {
+        list-style: none;
+        margin: 0;
+        padding: 0;
         display: grid;
+        gap: 6px;
+      }
+
+      .participant {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 8px;
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .hint {
-        margin: 6px 0 0;
-        font-size: 11px;
-        color: var(--vscode-descriptionForeground);
-      }
-
-      .field {
-        display: grid;
-        gap: 6px;
-      }
-
-      .field label {
-        font-size: 11px;
-        color: var(--vscode-descriptionForeground);
-      }
-
-      .field input {
-        width: 100%;
-        box-sizing: border-box;
-      }
-
-      #chat {
-        max-height: 160px;
-        overflow: auto;
-        display: grid;
-        gap: 6px;
-        padding-right: 4px;
-      }
-
-      .chat-line {
-        font-size: 12px;
-        line-height: 1.4;
-        background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 70%, transparent);
         border-radius: 6px;
         padding: 6px 8px;
-        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 45%, transparent);
+        background: color-mix(in srgb, var(--vscode-editor-background) 58%, transparent);
       }
 
-      .chat-line .meta {
-        color: var(--vscode-descriptionForeground);
-        font-size: 11px;
-      }
-
-      #participants {
-        margin: 0;
-        padding-left: 18px;
+      .chat-list {
+        max-height: 170px;
+        overflow-y: auto;
         display: grid;
-        gap: 4px;
-        font-size: 12px;
+        gap: 5px;
       }
 
-      .participants-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
+      .chat-item {
+        border-radius: 6px;
+        padding: 6px 8px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 45%, transparent);
+        background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 60%, transparent);
       }
 
-      .counter {
-        font-size: 11px;
+      .chat-meta {
+        font-size: 10px;
         color: var(--vscode-descriptionForeground);
+        margin-bottom: 2px;
+      }
+
+      .chat-text {
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
       }
 
       .video-grid {
-        margin-top: 8px;
         display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 8px;
       }
 
-      .video-card {
-        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
-        border-radius: 8px;
+      .video-tile {
+        border-radius: 7px;
+        border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
         overflow: hidden;
+        transition: transform 0.18s ease;
       }
 
-      .video-card .label {
-        padding: 4px 8px;
-        font-size: 11px;
+      .video-tile.zoomable:hover {
+        transform: scale(1.03);
+      }
+
+      .video-tile-label {
+        padding: 4px 7px;
+        border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border) 45%, transparent);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
         color: var(--vscode-descriptionForeground);
-        border-bottom: 1px solid var(--vscode-panel-border);
       }
 
       video {
         width: 100%;
-        height: 120px;
-        display: block;
+        height: 96px;
         background: #000;
+        object-fit: cover;
+        transform-origin: center;
       }
 
-      .muted {
-        opacity: 0.75;
-      }
-
-      .empty {
-        font-size: 12px;
+      .help {
+        margin: 8px 0 0;
         color: var(--vscode-descriptionForeground);
+        font-size: 11px;
+        line-height: 1.4;
       }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+      }
+
+      .mt8 { margin-top: 8px; }
+      .mt10 { margin-top: 10px; }
     </style>
   </head>
   <body>
-    <main class="wrap">
-      <section class="card">
-        <div class="status-row">
-          <h3>Session</h3>
-          <span id="modePill" class="pill">Idle</span>
-        </div>
-        <p id="sessionStatus" class="status-copy">Ready</p>
-      </section>
+    <header class="header">
+      <div class="title">Multiplayer Workspace</div>
+      <div class="subtitle">Live collaboration, calls, and chat in one place</div>
+    </header>
 
-      <section class="card">
-        <h3>Quick Actions</h3>
-        <div class="btn-grid">
-          <button id="hostSession" class="primary">Host</button>
-          <button id="joinSession" class="secondary">Join</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button id="endSession" class="warn" style="width:100%">End Session</button>
-        </div>
-        <p class="hint">Host and Join open guided prompts so setup stays fast and safe.</p>
-      </section>
+    <nav class="tabs">
+      <button class="tab" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="invites">Invites</button>
+      <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="call">Call</button>
+    </nav>
 
-      <section class="card">
-        <h3>Invites</h3>
-        <div class="field">
-          <label for="privateInvite">Private Invite</label>
-          <input id="privateInvite" readonly placeholder="Host a session to generate links" />
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button id="copyPrivateInvite" class="secondary">Copy Private</button>
-        </div>
-        <div class="field" style="margin-top:8px">
-          <label for="openInvite">Open Invite</label>
-          <input id="openInvite" readonly placeholder="Optional shareable invite" />
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button id="copyOpenInvite" class="secondary">Copy Open</button>
-          <span id="invitePolicy" class="pill">Policy: n/a</span>
-        </div>
-      </section>
+    <div class="top-actions row">
+      <button id="openChatTab" class="secondary">Pop Out Chat Tab</button>
+      <button id="openBrowserTab" class="secondary">Open Browser Tab</button>
+    </div>
 
-      <section class="card">
-        <div class="participants-head">
-          <h3>Participants</h3>
-          <span id="participantCount" class="counter">0 connected</span>
-        </div>
-        <ul id="participants"></ul>
-      </section>
-
-      <section class="card">
-        <h3>Team Chat</h3>
-        <div id="chat"></div>
-        <div class="row stack" style="margin-top:8px">
-          <input id="chatInput" placeholder="Send a message to everyone in this session" />
-          <button id="sendChat" class="primary">Send</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <h3>Voice + Video</h3>
-        <div class="row" style="margin-top:8px">
-          <button id="startCall" class="primary">Start Call</button>
-          <button id="toggleAudio" class="secondary">Mute/Unmute</button>
-          <button id="toggleVideo" class="secondary">Camera On/Off</button>
-        </div>
-        <p id="callStatus" class="muted">Idle</p>
-        <div class="video-grid">
-          <div class="video-card">
-            <div class="label">You</div>
-            <video id="localVideo" muted autoplay playsinline></video>
+    <section class="panel" data-panel="overview">
+      <div class="stack">
+        <article class="card">
+          <div class="status-row">
+            <div class="status-main">
+              <span id="statusDot" class="dot"></span>
+              <div>
+                <div id="sessionStatus" class="status-label">Ready</div>
+                <div id="statusSub" class="status-sub">No active session</div>
+              </div>
+            </div>
+            <span id="modePill" class="pill">Idle</span>
           </div>
-          <div class="video-card">
-            <div class="label">Remote</div>
-            <video id="remoteVideo" autoplay playsinline></video>
+        </article>
+
+        <article class="card">
+          <h3 class="section-title">Actions</h3>
+          <div class="row">
+            <button id="hostSession" class="primary" style="flex:1">Host Session</button>
+            <button id="joinSession" class="secondary" style="flex:1">Join Session</button>
           </div>
-        </div>
-      </section>
-    </main>
+          <button id="endSession" class="warn mt8" style="width:100%">End Session</button>
+          <p class="help">Use Host/Join to start collaboration. End Session cleanly closes sync and call channels.</p>
+        </article>
+
+        <article class="card">
+          <h3 class="section-title">Participants</h3>
+          <div id="participantCount" class="status-sub">0 connected</div>
+          <ul id="participants" class="participants mt8"></ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="invites">
+      <div class="stack">
+        <article class="card">
+          <h3 class="section-title">Private Link</h3>
+          <input id="privateInvite" type="text" readonly placeholder="Host a session to generate links" />
+          <button id="copyPrivateInvite" class="secondary mt8">Copy Private Link</button>
+        </article>
+
+        <article class="card">
+          <h3 class="section-title">Open Link</h3>
+          <input id="openInvite" type="text" readonly placeholder="Optional shareable invite" />
+          <div class="row mt8">
+            <button id="copyOpenInvite" class="secondary" style="flex:1">Copy Open Link</button>
+            <button id="invitePolicy" class="secondary" style="pointer-events:none">Policy: n/a</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="chat">
+      <div class="stack">
+        <article class="card">
+          <h3 class="section-title">Team Chat</h3>
+          <div id="chat" class="chat-list"></div>
+          <div class="split mt10">
+            <input id="chatInput" type="text" placeholder="Message everyone..." />
+            <button id="sendChat" class="primary">Send</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="call">
+      <div class="stack">
+        <article class="card">
+          <h3 class="section-title">Voice + Video</h3>
+          <div class="row">
+            <button id="startCall" class="primary" style="flex:1">Start Call</button>
+            <button id="toggleAudio" class="secondary" style="flex:1">Mute</button>
+          </div>
+          <button id="toggleVideo" class="secondary mt8" style="width:100%">Camera Off</button>
+
+          <div class="mt10">
+            <label class="field-label" for="zoomRange">Camera Zoom</label>
+            <input id="zoomRange" type="range" min="1" max="2" step="0.05" value="1" />
+          </div>
+
+          <div class="row mt8">
+            <button id="hoverZoomToggle" class="secondary" style="flex:1">Hover Zoom: Off</button>
+            <button id="callState" class="secondary" style="pointer-events:none; flex:1">Idle</button>
+          </div>
+
+          <div class="video-grid mt10">
+            <div class="video-tile" id="localTile">
+              <div class="video-tile-label">You</div>
+              <video id="localVideo" muted autoplay playsinline></video>
+            </div>
+            <div class="video-tile" id="remoteTile">
+              <div class="video-tile-label">Remote</div>
+              <video id="remoteVideo" autoplay playsinline></video>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
 
     <script>
       const vscode = acquireVsCodeApi();
+
+      const tabs = [...document.querySelectorAll(".tab")];
+      const panels = [...document.querySelectorAll(".panel")];
+
       const sessionStatus = document.getElementById("sessionStatus");
+      const statusSub = document.getElementById("statusSub");
+      const statusDot = document.getElementById("statusDot");
       const modePill = document.getElementById("modePill");
       const hostSessionButton = document.getElementById("hostSession");
       const joinSessionButton = document.getElementById("joinSession");
@@ -417,22 +605,38 @@ function getWebviewHtml() {
       const copyOpenInviteButton = document.getElementById("copyOpenInvite");
       const invitePolicy = document.getElementById("invitePolicy");
       const participantCount = document.getElementById("participantCount");
+      const participants = document.getElementById("participants");
+
       const chat = document.getElementById("chat");
       const chatInput = document.getElementById("chatInput");
-      const sendChat = document.getElementById("sendChat");
-      const participants = document.getElementById("participants");
-      const localVideo = document.getElementById("localVideo");
-      const remoteVideo = document.getElementById("remoteVideo");
-      const callStatus = document.getElementById("callStatus");
+      const sendChatButton = document.getElementById("sendChat");
 
       const startCallButton = document.getElementById("startCall");
       const toggleAudioButton = document.getElementById("toggleAudio");
       const toggleVideoButton = document.getElementById("toggleVideo");
+      const callStateButton = document.getElementById("callState");
+      const zoomRange = document.getElementById("zoomRange");
+      const hoverZoomToggle = document.getElementById("hoverZoomToggle");
+      const localVideo = document.getElementById("localVideo");
+      const remoteVideo = document.getElementById("remoteVideo");
+      const localTile = document.getElementById("localTile");
+      const remoteTile = document.getElementById("remoteTile");
 
+      document.getElementById("openChatTab").addEventListener("click", () => {
+        vscode.postMessage({ type: "open-chat-tab" });
+      });
+
+      document.getElementById("openBrowserTab").addEventListener("click", () => {
+        vscode.postMessage({ type: "open-browser-tab", view: activeTab });
+      });
+
+      let activeTab = "${safeInitialView}";
       let localStream = null;
       let pc = null;
       let audioEnabled = true;
       let videoEnabled = true;
+      let hoverZoomEnabled = false;
+      let isCallConnected = false;
       let sessionState = {
         mode: "idle",
         status: "Ready",
@@ -441,29 +645,128 @@ function getWebviewHtml() {
         privateInviteLink: ""
       };
 
+      function setActiveTab(tabName) {
+        activeTab = tabName;
+
+        for (const tab of tabs) {
+          tab.classList.toggle("active", tab.dataset.tab === tabName);
+        }
+
+        for (const panel of panels) {
+          panel.classList.toggle("active", panel.dataset.panel === tabName);
+        }
+      }
+
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
+      }
+
       function updateSessionState(nextState) {
         sessionState = { ...sessionState, ...(nextState || {}) };
         const mode = sessionState.mode || "idle";
-        modePill.dataset.mode = mode;
 
-        modePill.textContent = mode === "host" ? "Hosting" : mode === "guest" ? "Guest" : "Idle";
+        statusDot.className = `dot ${mode === "host" ? "host" : mode === "guest" ? "guest" : ""}`.trim();
+        modePill.className = `pill ${mode === "host" ? "host" : mode === "guest" ? "guest" : ""}`.trim();
+
+        modePill.textContent = mode === "host" ? "Host" : mode === "guest" ? "Guest" : "Idle";
         sessionStatus.textContent = sessionState.status || "Ready";
+        statusSub.textContent = mode === "host"
+          ? "Hosting session"
+          : mode === "guest"
+            ? "Connected as guest"
+            : "No active session";
 
         privateInvite.value = sessionState.privateInviteLink || "";
         openInvite.value = sessionState.openInviteLink || "";
 
         invitePolicy.textContent = sessionState.inviteOnlyMode === null
           ? "Policy: n/a"
-          : "Policy: " + (sessionState.inviteOnlyMode ? "Invite-only" : "Open");
+          : `Policy: ${sessionState.inviteOnlyMode ? "Invite-only" : "Open"}`;
 
+        const isIdle = mode === "idle";
         const isHost = mode === "host";
-        const canEnd = mode !== "idle";
 
-        hostSessionButton.disabled = mode !== "idle";
-        joinSessionButton.disabled = mode !== "idle";
-        endSessionButton.disabled = !canEnd;
+        hostSessionButton.disabled = !isIdle;
+        joinSessionButton.disabled = !isIdle;
+        endSessionButton.disabled = isIdle;
+
         copyPrivateInviteButton.disabled = !isHost || !sessionState.privateInviteLink;
         copyOpenInviteButton.disabled = !isHost || !sessionState.openInviteLink;
+      }
+
+      function setCallState(text, connected = false) {
+        callStateButton.textContent = text;
+        isCallConnected = connected;
+        applyVideoZoom();
+      }
+
+      function applyVideoZoom() {
+        const zoom = Number(zoomRange.value || "1");
+        localVideo.style.transform = `scale(${zoom.toFixed(2)})`;
+        remoteVideo.style.transform = `scale(${zoom.toFixed(2)})`;
+
+        const zoomable = hoverZoomEnabled && isCallConnected;
+        localTile.classList.toggle("zoomable", zoomable);
+        remoteTile.classList.toggle("zoomable", zoomable);
+      }
+
+      function renderParticipants(list) {
+        participants.innerHTML = "";
+
+        const items = list || [];
+        participantCount.textContent = `${items.length} connected`;
+
+        if (!items.length) {
+          const li = document.createElement("li");
+          li.className = "status-sub";
+          li.textContent = "No participants yet.";
+          participants.append(li);
+          return;
+        }
+
+        for (const item of items) {
+          const li = document.createElement("li");
+          li.className = "participant";
+
+          const left = document.createElement("span");
+          left.textContent = item.name || "Unknown";
+
+          const right = document.createElement("span");
+          right.className = "status-sub";
+          right.textContent = item.role || "member";
+
+          li.append(left, right);
+          participants.append(li);
+        }
+      }
+
+      function appendChat(message) {
+        const payload = message || {};
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "chat-item";
+
+        const meta = document.createElement("div");
+        meta.className = "chat-meta";
+        const timestamp = payload.timestamp
+          ? new Date(payload.timestamp).toLocaleTimeString()
+          : "now";
+        meta.textContent = `${timestamp} · ${payload.user || "Unknown"}`;
+
+        const text = document.createElement("div");
+        text.className = "chat-text";
+        text.textContent = payload.text || "";
+
+        wrapper.append(meta, text);
+        chat.append(wrapper);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function setChatHistory(messages) {
+        chat.innerHTML = "";
+        for (const message of messages || []) {
+          appendChat(message);
+        }
       }
 
       async function ensurePeerConnection() {
@@ -484,13 +787,22 @@ function getWebviewHtml() {
           }
         };
 
+        pc.onconnectionstatechange = () => {
+          const state = pc.connectionState;
+          const connected = state === "connected";
+          const text = connected ? "Connected" : `RTC: ${state}`;
+          setCallState(text, connected);
+        };
+
         pc.ontrack = (event) => {
           remoteVideo.srcObject = event.streams[0];
-          callStatus.textContent = "Connected";
+          setCallState("Connected", true);
         };
 
         if (localStream) {
-          localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+          for (const track of localStream.getTracks()) {
+            pc.addTrack(track, localStream);
+          }
         }
 
         return pc;
@@ -503,7 +815,7 @@ function getWebviewHtml() {
 
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         localVideo.srcObject = localStream;
-        callStatus.textContent = "Media ready";
+        setCallState("Media Ready", false);
         return localStream;
       }
 
@@ -519,7 +831,7 @@ function getWebviewHtml() {
           signal: { type: "offer", sdp: offer }
         });
 
-        callStatus.textContent = "Calling...";
+        setCallState("Calling...", false);
       }
 
       async function handleRtcSignal(signal) {
@@ -534,17 +846,19 @@ function getWebviewHtml() {
           await conn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           const answer = await conn.createAnswer();
           await conn.setLocalDescription(answer);
+
           vscode.postMessage({
             type: "rtc-signal",
             signal: { type: "answer", sdp: answer }
           });
-          callStatus.textContent = "Answering call...";
+
+          setCallState("Answering...", false);
           return;
         }
 
         if (signal.type === "answer") {
           await conn.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-          callStatus.textContent = "Call connected";
+          setCallState("Connected", true);
           return;
         }
 
@@ -552,45 +866,9 @@ function getWebviewHtml() {
           try {
             await conn.addIceCandidate(new RTCIceCandidate(signal.candidate));
           } catch {
-            // Ignore out-of-order ICE errors in prototype.
+            // Ignore out-of-order ICE candidates.
           }
         }
-      }
-
-      function renderParticipants(list) {
-        participants.innerHTML = "";
-
-        const items = list || [];
-        participantCount.textContent = items.length + " connected";
-
-        if (!items.length) {
-          const li = document.createElement("li");
-          li.className = "empty";
-          li.textContent = "No one connected yet.";
-          participants.append(li);
-          return;
-        }
-
-        for (const item of items) {
-          const li = document.createElement("li");
-          li.textContent = item.name + " (" + item.role + ")";
-          participants.append(li);
-        }
-      }
-
-      function appendChat(message) {
-        const line = document.createElement("div");
-        line.className = "chat-line";
-        const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleTimeString() : "now";
-        line.innerHTML = "<div class=\"meta\">"
-          + timestamp
-          + " · "
-          + (message.user || "Unknown")
-          + "</div><div>"
-          + (message.text || "")
-          + "</div>";
-        chat.append(line);
-        chat.scrollTop = chat.scrollHeight;
       }
 
       hostSessionButton.addEventListener("click", () => {
@@ -613,51 +891,72 @@ function getWebviewHtml() {
         vscode.postMessage({ type: "copy-invite", kind: "open" });
       });
 
-      sendChat.addEventListener("click", () => {
+      sendChatButton.addEventListener("click", () => {
         const text = chatInput.value.trim();
         if (!text) {
           return;
         }
+
         vscode.postMessage({ type: "send-chat", text });
         chatInput.value = "";
       });
 
       chatInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
-          sendChat.click();
+          sendChatButton.click();
         }
       });
 
       startCallButton.addEventListener("click", () => {
         startCall().catch((error) => {
-          callStatus.textContent = "Call failed: " + error.message;
+          setCallState(`Call failed: ${error.message || String(error)}`);
         });
       });
 
       toggleAudioButton.addEventListener("click", async () => {
         await ensureMedia();
         audioEnabled = !audioEnabled;
-        localStream.getAudioTracks().forEach((track) => {
+
+        for (const track of localStream.getAudioTracks()) {
           track.enabled = audioEnabled;
-        });
+        }
+
+        toggleAudioButton.textContent = audioEnabled ? "Mute" : "Unmute";
       });
 
       toggleVideoButton.addEventListener("click", async () => {
         await ensureMedia();
         videoEnabled = !videoEnabled;
-        localStream.getVideoTracks().forEach((track) => {
+
+        for (const track of localStream.getVideoTracks()) {
           track.enabled = videoEnabled;
-        });
+        }
+
+        toggleVideoButton.textContent = videoEnabled ? "Camera Off" : "Camera On";
+      });
+
+      zoomRange.addEventListener("input", applyVideoZoom);
+
+      hoverZoomToggle.addEventListener("click", () => {
+        hoverZoomEnabled = !hoverZoomEnabled;
+        hoverZoomToggle.textContent = `Hover Zoom: ${hoverZoomEnabled ? "On" : "Off"}`;
+        applyVideoZoom();
       });
 
       window.addEventListener("message", (event) => {
         const data = event.data;
+
         if (!data?.type) {
           return;
         }
 
         if (data.type === "chat-message") {
           appendChat(data.payload);
+          return;
+        }
+
+        if (data.type === "chat-history") {
+          setChatHistory(data.payload || []);
           return;
         }
 
@@ -668,7 +967,7 @@ function getWebviewHtml() {
 
         if (data.type === "rtc-signal") {
           handleRtcSignal(data.payload).catch((error) => {
-            callStatus.textContent = "RTC error: " + error.message;
+            setCallState(`RTC error: ${error.message || String(error)}`);
           });
           return;
         }
@@ -679,13 +978,22 @@ function getWebviewHtml() {
         }
 
         if (data.type === "status") {
-          callStatus.textContent = data.payload;
-          updateSessionState({ status: data.payload || "Ready" });
+          const text = typeof data.payload === "string" ? data.payload : String(data.payload || "Idle");
+          updateSessionState({ status: text });
+          return;
+        }
+
+        if (data.type === "switch-view") {
+          setActiveTab(data.payload || "overview");
         }
       });
 
+      setActiveTab(activeTab);
       updateSessionState({ mode: "idle", status: "Ready" });
       renderParticipants([]);
+      setCallState("Idle", false);
+      applyVideoZoom();
+
       vscode.postMessage({ type: "panel-ready" });
     </script>
   </body>

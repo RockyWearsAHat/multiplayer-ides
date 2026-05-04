@@ -349,6 +349,21 @@ class SessionService extends EventEmitter {
     await fs.promises.writeFile(markdownPath, `${markdown.join("\n")}\n`, "utf8");
   }
 
+  async getRecentChatMessages(maxMessages = 100) {
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      return [];
+    }
+
+    const jsonlPath = path.join(root, ".multiplayer", "chat", "events.jsonl");
+
+    try {
+      return await this.readLastMessages(jsonlPath, maxMessages);
+    } catch {
+      return [];
+    }
+  }
+
   async readLastMessages(filePath, maxMessages) {
     const raw = await fs.promises.readFile(filePath, "utf8");
     const lines = raw.trim().split("\n").filter(Boolean);

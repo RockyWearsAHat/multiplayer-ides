@@ -2,7 +2,7 @@
   "name": "multiplayer-code-bridge",
   "displayName": "Multiplayer Code Bridge",
   "description": "VS Code bridge for standalone Multiplayer Code desktop sessions",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "publisher": "local-prototype",
   "repository": {
     "type": "git",
@@ -18,14 +18,6 @@
     "onStartupFinished"
   ],
   "main": "./src/extension.js",
-  "files": [
-    "src/**",
-    "media/**",
-    "node_modules/**",
-    "README.md",
-    "LICENSE",
-    "package.json"
-  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -64,6 +56,16 @@
       {
         "command": "multiplayer.openPanel",
         "title": "Open Multiplayer Panel",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.openWorkspaceTab",
+        "title": "Open Multiplayer Workspace Tab",
+        "category": "Multiplayer"
+      },
+      {
+        "command": "multiplayer.openChatTab",
+        "title": "Open Multiplayer Chat Tab",
         "category": "Multiplayer"
       },
       {
