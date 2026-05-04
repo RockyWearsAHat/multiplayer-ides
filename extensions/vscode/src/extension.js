@@ -36,6 +36,7 @@ class CallHelperManager {
     this._stopping     = false;
     this._stderrLines  = [];
     this._startTimeout = null;
+    this._shutdownPromise = null;
   }
 
   isActive() { return this._active; }
@@ -49,10 +50,18 @@ class CallHelperManager {
 
   /** Start the helper process. Resolves when the IPC server is listening. */
   async startCall() {
+    if (this._shutdownPromise) {
+      await this._shutdownPromise;
+    }
+
     if (this._active) {
       // Already running — end the call instead (toggle)
-      this.stopCall();
+      await this.stopCall();
       return;
+    }
+
+    if (this._socket || this._server || this._process) {
+      await this._shutdownHelper({ announceEnded: false });
     }
 
     const mainScript = path.join(this._helperDir, "main.js");
@@ -151,31 +160,79 @@ class CallHelperManager {
 
   /** Stop the helper and clean up. */
   stopCall() {
-    this._active = false;
-    this._stopping = true;
-    this.sendToHelper({ type: "end-call" });
-    setTimeout(() => {
-      this._process?.kill();
-      this._process = null;
-      this._cleanup();
-    }, 400);
-    this._onState({ status: "ended", text: "Idle", connected: false });
+    return this._shutdownHelper({ announceEnded: true });
   }
 
   /** Dispose all resources — call when extension deactivates. */
   dispose() {
-    this._active = false;
-    this._stopping = true;
-    this._process?.kill();
-    this._process = null;
-    this._cleanup();
+    return this._shutdownHelper({ announceEnded: false, forceKill: true });
   }
 
   _cleanup() {
     this._clearStartTimeout();
+    try {
+      this._socket?.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this._server?.clients?.forEach((client) => {
+        try { client.terminate(); } catch { /* ignore */ }
+      });
+    } catch {
+      /* ignore */
+    }
     try { this._server?.close(); } catch { /* ignore */ }
     this._server = null;
     this._socket = null;
+  }
+
+  async _shutdownHelper({ announceEnded = true, forceKill = false } = {}) {
+    if (this._shutdownPromise) {
+      return this._shutdownPromise;
+    }
+
+    const hadHelper = Boolean(this._active || this._socket || this._server || this._process);
+
+    this._shutdownPromise = (async () => {
+      this._active = false;
+      this._stopping = true;
+      this._clearStartTimeout();
+
+      try {
+        this.sendToHelper({ type: "end-call" });
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        this._socket?.close();
+      } catch {
+        /* ignore */
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, forceKill ? 0 : 200));
+
+      if (this._process && !this._process.killed) {
+        try {
+          this._process.kill();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      this._process = null;
+      this._cleanup();
+
+      if (announceEnded && hadHelper) {
+        this._onState({ status: "ended", text: "Idle", connected: false });
+      }
+    })().finally(() => {
+      this._stopping = false;
+      this._shutdownPromise = null;
+    });
+
+    return this._shutdownPromise;
   }
 
   _handleHelperMessage(msg) {

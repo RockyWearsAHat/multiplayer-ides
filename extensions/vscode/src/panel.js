@@ -514,6 +514,19 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         Call permissions and media run in the <strong>Multiplayer Call Helper</strong> background process.
       </p>
 
+      <div class="helper-surface" id="helperSurface">
+        <div class="helper-window" id="helperWindow" role="dialog" aria-label="Embedded call helper window">
+          <div class="helper-window-bar" id="helperWindowBar">
+            <span class="helper-window-grip" aria-hidden="true"></span>
+            <span class="helper-window-title">Call Helper</span>
+            <span class="helper-window-status" id="helperWindowStatus">Idle</span>
+          </div>
+          <div class="helper-window-body">
+            <div class="helper-window-page" id="helperWindowPage">test</div>
+          </div>
+        </div>
+      </div>
+
       <div style="display:none">
         <div class="video-wrap">
           <div class="video-tile" id="localTile">
@@ -624,6 +637,10 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
       const callDockEl          = document.getElementById("callDock");
       const camWarnEl           = document.getElementById("camWarn");
       const camWarnSettingsBtn  = document.getElementById("camWarnSettings");
+      const helperSurface       = document.getElementById("helperSurface");
+      const helperWindow        = document.getElementById("helperWindow");
+      const helperWindowBar     = document.getElementById("helperWindowBar");
+      const helperWindowStatus  = document.getElementById("helperWindowStatus");
       const zoomRange           = document.getElementById("zoomRange");
       const hoverZoomToggle     = document.getElementById("hoverZoomToggle");
       const localVideo          = document.getElementById("localVideo");
@@ -644,6 +661,8 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
       let hoverZoomEnabled = false;
       let isCallConnected = false;
       let callActive = false; // true when the call helper is running
+      let helperWindowPosition = { x: 24, y: 24 };
+      let helperDragState = null;
       const isChatPopoutSurface = document.body.classList.contains("chat-popout");
       let chatPopoutOpen = isChatPopoutSurface;
       let sessionState = {
@@ -906,6 +925,98 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
 
       function setCamWarn(show) {
         camWarnEl?.classList.toggle("show", show);
+      }
+
+      function resetCallControls() {
+        audioEnabled = true;
+        videoEnabled = true;
+        toggleAudioBtn.disabled = true;
+        toggleVideoBtn.disabled = true;
+        toggleAudioBtn.textContent = "Mute";
+        toggleVideoBtn.textContent = "Cam Off";
+        toggleAudioBtn.classList.remove("active");
+        toggleVideoBtn.classList.remove("active");
+        toggleAudioBtn.setAttribute("aria-pressed", "false");
+        toggleVideoBtn.setAttribute("aria-pressed", "false");
+      }
+
+      function setHelperWindowStatus(text, variant = "idle") {
+        if (!helperWindow || !helperWindowStatus) {
+          return;
+        }
+
+        helperWindowStatus.textContent = text;
+        helperWindow.dataset.state = variant;
+      }
+
+      function clampHelperWindowPosition(x, y) {
+        const surfaceWidth = helperSurface?.clientWidth || 0;
+        const surfaceHeight = helperSurface?.clientHeight || 0;
+        const windowWidth = helperWindow?.offsetWidth || 0;
+        const windowHeight = helperWindow?.offsetHeight || 0;
+        const maxX = Math.max(0, surfaceWidth - windowWidth);
+        const maxY = Math.max(0, surfaceHeight - windowHeight);
+
+        return {
+          x: Math.min(Math.max(0, x), maxX),
+          y: Math.min(Math.max(0, y), maxY),
+        };
+      }
+
+      function positionHelperWindow(nextPosition) {
+        if (!helperWindow) {
+          return;
+        }
+
+        helperWindowPosition = clampHelperWindowPosition(nextPosition.x, nextPosition.y);
+        helperWindow.style.transform = "translate(" + helperWindowPosition.x + "px, " + helperWindowPosition.y + "px)";
+      }
+
+      function syncHelperWindowPosition() {
+        positionHelperWindow(helperWindowPosition);
+      }
+
+      function startHelperWindowDrag(event) {
+        if (!helperSurface || !helperWindowBar || event.button !== 0) {
+          return;
+        }
+
+        helperDragState = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: helperWindowPosition.x,
+          originY: helperWindowPosition.y,
+        };
+
+        helperWindowBar.setPointerCapture(event.pointerId);
+        helperWindow.classList.add("dragging");
+      }
+
+      function moveHelperWindow(event) {
+        if (!helperDragState || event.pointerId !== helperDragState.pointerId) {
+          return;
+        }
+
+        positionHelperWindow({
+          x: helperDragState.originX + (event.clientX - helperDragState.startX),
+          y: helperDragState.originY + (event.clientY - helperDragState.startY),
+        });
+      }
+
+      function stopHelperWindowDrag(event) {
+        if (!helperDragState || (event && event.pointerId !== helperDragState.pointerId)) {
+          return;
+        }
+
+        try {
+          helperWindowBar?.releasePointerCapture(helperDragState.pointerId);
+        } catch {
+          /* ignore */
+        }
+
+        helperWindow?.classList.remove("dragging");
+        helperDragState = null;
       }
 
       function applyVideoZoom() {
@@ -1245,10 +1356,12 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
           startCallBtn.disabled = true;
           vscode.postMessage({ type: "end-call" });
           setCallState("Ending call…", false);
+          setHelperWindowStatus("Ending", "starting");
           startCallBtn.textContent = "Start Call";
           callActive = false;
           callDockEl?.classList.remove("call-active");
           setCamWarn(false);
+          resetCallControls();
           setTimeout(() => { startCallBtn.disabled = false; }, 500);
         } else {
           // Start the companion helper (it owns the OS permission prompt)
@@ -1256,6 +1369,7 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
           startCallBtn.textContent = "Starting…";
           vscode.postMessage({ type: "start-call" });
           setCallState("Starting call helper…", false);
+          setHelperWindowStatus("Starting", "starting");
         }
       });
 
@@ -1303,6 +1417,11 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         hoverZoomToggle.textContent = "Hover Zoom: " + (hoverZoomEnabled ? "On" : "Off");
         applyVideoZoom();
       });
+      helperWindowBar?.addEventListener("pointerdown", startHelperWindowDrag);
+      helperWindowBar?.addEventListener("pointermove", moveHelperWindow);
+      helperWindowBar?.addEventListener("pointerup", stopHelperWindowDrag);
+      helperWindowBar?.addEventListener("pointercancel", stopHelperWindowDrag);
+      window.addEventListener("resize", syncHelperWindowPosition);
 
       // ── Message bus ────────────────────────────────────────────
       window.addEventListener("message", (event) => {
@@ -1315,33 +1434,38 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
         if (data.type === "call-helper-state") {
           const { status, text, connected, hasAudio, hasVideo } = data;
           setCallState(text || "Idle", Boolean(connected));
+          setHelperWindowStatus(text || "Idle", status || "idle");
           startCallBtn.disabled = false;
           if (status === "media-ready" || status === "call") {
             callActive = true;
             startCallBtn.textContent = "End Call";
-            toggleAudioBtn.disabled = false;
+            toggleAudioBtn.disabled = !(hasAudio ?? true);
             toggleVideoBtn.disabled = !(hasVideo ?? true);
             callDockEl?.classList.add("call-active");
             setCamWarn(hasVideo === false);
           } else if (status === "starting") {
             startCallBtn.disabled = true;
             startCallBtn.textContent = "Starting…";
+            resetCallControls();
           } else if (status === "ended" || status === "error") {
             callActive = false;
             startCallBtn.textContent = "Start Call";
             callDockEl?.classList.remove("call-active");
             setCamWarn(false);
+            resetCallControls();
           } else if (status === "denied") {
             callActive = false;
             startCallBtn.textContent = "Start Call";
             callDockEl?.classList.remove("call-active");
             setCamWarn(false);
+            resetCallControls();
             showPermissionDialog();
           } else if (status === "not-installed") {
             callActive = false;
             startCallBtn.textContent = "Start Call";
             callDockEl?.classList.remove("call-active");
             setCamWarn(false);
+            resetCallControls();
           }
           return;
         }
@@ -1375,6 +1499,9 @@ function getWebviewHtml({ initialView = "session", surfaceKind = "editor", webvi
       updateSessionState({ mode: "idle", status: "Ready" });
       renderParticipants([]);
       setCallState("Idle", false);
+      resetCallControls();
+      syncHelperWindowPosition();
+      setHelperWindowStatus("Idle", "idle");
       applyVideoZoom();
       updateChatPopoutControls();
       vscode.postMessage({ type: "panel-ready" });

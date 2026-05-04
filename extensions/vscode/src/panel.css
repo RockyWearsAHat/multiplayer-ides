@@ -752,6 +752,122 @@ video {
 .call-dock-state.state-warn { color: var(--vscode-charts-orange, #e8a63a); font-weight: 700; }
 .call-dock-state.state-err  { color: var(--vscode-errorForeground, #f44747); font-weight: 700; }
 
+.helper-surface {
+  position: relative;
+  min-height: 320px;
+  border: 1px solid var(--mp-border);
+  border-radius: calc(var(--mp-radius) + 2px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vscode-editor-background) 94%, white) 0%,
+    color-mix(in srgb, var(--vscode-editor-background) 100%, black) 100%
+  );
+  overflow: hidden;
+}
+
+.helper-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(360px, calc(100% - 24px));
+  min-width: 220px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 35%, var(--mp-border));
+  border-radius: 12px;
+  background: var(--vscode-editorWidget-background, #ffffff);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.helper-window.dragging {
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.32);
+}
+
+.helper-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--vscode-titleBar-activeBackground, var(--vscode-editor-background)) 90%, white);
+  color: var(--vscode-titleBar-activeForeground, var(--vscode-foreground));
+  cursor: grab;
+  user-select: none;
+}
+
+.helper-window.dragging .helper-window-bar {
+  cursor: grabbing;
+}
+
+.helper-window-grip {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-focusBorder) 70%, transparent);
+  box-shadow:
+    14px 0 0 color-mix(in srgb, var(--vscode-focusBorder) 45%, transparent),
+    28px 0 0 color-mix(in srgb, var(--vscode-focusBorder) 25%, transparent);
+  flex-shrink: 0;
+}
+
+.helper-window-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.helper-window-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.helper-window-body {
+  background: #ffffff;
+  min-height: 200px;
+}
+
+.helper-window-page {
+  min-height: 200px;
+  display: grid;
+  place-items: center;
+  color: #111111;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.helper-window[data-state="starting"],
+.helper-window[data-state="not-installed"] {
+  border-color: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 55%, var(--mp-border));
+}
+
+.helper-window[data-state="media-ready"],
+.helper-window[data-state="call"] {
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 55%, var(--mp-border));
+}
+
+.helper-window[data-state="error"],
+.helper-window[data-state="denied"] {
+  border-color: color-mix(in srgb, var(--vscode-errorForeground, #f44747) 55%, var(--mp-border));
+}
+
+.helper-window[data-state="starting"] .helper-window-status,
+.helper-window[data-state="not-installed"] .helper-window-status {
+  color: var(--vscode-charts-orange, #e8a63a);
+}
+
+.helper-window[data-state="media-ready"] .helper-window-status,
+.helper-window[data-state="call"] .helper-window-status {
+  color: var(--vscode-testing-iconPassed, #4ec94e);
+}
+
+.helper-window[data-state="error"] .helper-window-status,
+.helper-window[data-state="denied"] .helper-window-status {
+  color: var(--vscode-errorForeground, #f44747);
+}
+
 /* ─── Inline camera warning ─── */
 .cam-warn {
   display: none;
