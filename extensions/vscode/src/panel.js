@@ -7,37 +7,39 @@ class MultiplayerViewProvider {
   }
 
   resolveWebviewView(webviewView) {
-    this._view = webviewView;
+    try {
+      this._view = webviewView;
 
-    webviewView.webview.options = {
-      enableScripts: true
-    };
+      webviewView.webview.options = {
+        enableScripts: true
+      };
 
-    webviewView.webview.html = getWebviewHtml();
+      webviewView.webview.html = getWebviewHtml();
 
-    webviewView.webview.onDidReceiveMessage(async (message) => {
-      if (!message?.type) {
-        return;
-      }
+      webviewView.webview.onDidReceiveMessage(async (message) => {
+        if (!message?.type) {
+          return;
+        }
 
-      if (message.type === "send-chat") {
-        await this._handlers.onSendChat(message.text || "");
-        return;
-      }
+        if (message.type === "send-chat") {
+          await this._handlers.onSendChat(message.text || "");
+          return;
+        }
 
-      if (message.type === "rtc-signal") {
-        this._handlers.onRtcSignal(message.signal);
-        return;
-      }
+        if (message.type === "rtc-signal") {
+          this._handlers.onRtcSignal(message.signal);
+          return;
+        }
 
-      if (message.type === "panel-ready") {
-        this._handlers.onPanelReady();
-      }
-    });
-
-    webviewView.onDidDispose(() => {
-      this._view = null;
-    });
+        if (message.type === "panel-ready") {
+          this._handlers.onPanelReady();
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(`Multiplayer panel failed to load: ${message}`);
+      throw error;
+    }
   }
 
   sendMessage(payload) {
