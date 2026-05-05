@@ -51,15 +51,22 @@ function sendToRenderer(msg) {
   }
 }
 
-// ── Create the hidden helper window ──────────────────────────────────────────
+// ── Create the floating global call window ───────────────────────────────────
 function createCallWindow() {
   mainWindow = new BrowserWindow({
     show: false,
-    width: 420,
-    height: 240,
+    width: 480,
+    height: 58,
+    minWidth: 360,
+    minHeight: 58,
+    maxHeight: 58,
     resizable: false,
+    frame: false,
+    transparent: true,
     title: "Multiplayer Call",
-    backgroundColor: "#111827",
+    backgroundColor: "#00000000",
+    hasShadow: true,
+    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -68,6 +75,11 @@ function createCallWindow() {
       // contextIsolation keeps renderer code sandboxed from Node.
     },
   });
+
+  // Float above all windows at the OS "floating" level (above normal app windows)
+  // and make visible on every macOS Space/desktop.
+  mainWindow.setAlwaysOnTop(true, "floating");
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   mainWindow.loadFile(path.join(__dirname, "src", "renderer.html"));
 
@@ -78,6 +90,12 @@ function createCallWindow() {
     setTimeout(() => app.quit(), 300);
   });
 }
+
+ipcMain.on("helper-close-window", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+});
 
 // ── Connect back to the extension's IPC WebSocket server ─────────────────────
 function connectToExtension() {
@@ -149,6 +167,15 @@ async function handleStartCallRequest() {
     });
   }
 
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    // Bring above VS Code — required because the extension launches the helper
+    // via `open -g` (background launch) so macOS never activates it.
+    app.focus({ steal: true });
+    mainWindow.moveTop();
+    mainWindow.focus();
+  }
+
   sendToRenderer({
     type: "start-call",
     constraints: {
@@ -166,7 +193,6 @@ ipcMain.on("helper-to-ext", (_event, msg) => {
 // ── Renderer signals it is loaded and ready ───────────────────────────────────
 ipcMain.on("renderer-ready", () => {
   // Connect to the extension (this triggers "helper-ready" on open).
-  // The helper runs headless so call controls remain embedded in VS Code.
   connectToExtension();
 });
 

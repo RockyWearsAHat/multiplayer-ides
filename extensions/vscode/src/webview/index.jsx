@@ -44,12 +44,12 @@ function createDefaultCallUiState() {
   };
 }
 
-function getCallStateVariant(label, connected) {
+function getCallStateVariant(label, callActive) {
   const text = String(label || "").toLowerCase();
   if (text.includes("denied") || text.includes("error") || text.includes("failed")) {
     return "state-err";
   }
-  if (connected || text === "media ready" || text === "connected") {
+  if (callActive || text.includes("ready") || text === "connected") {
     return "state-ok";
   }
   if (
@@ -57,7 +57,8 @@ function getCallStateVariant(label, connected) {
     text.includes("limited") ||
     text.includes("requesting") ||
     text.includes("starting") ||
-    text.includes("calling")
+    text.includes("calling") ||
+    text.includes("ending")
   ) {
     return "state-warn";
   }
@@ -199,8 +200,8 @@ function App() {
               startLabel: "End Call",
               audioAvailable: data.hasAudio ?? true,
               videoAvailable: data.hasVideo ?? true,
-              audioEnabled: true,
-              videoEnabled: true,
+              audioEnabled: data.audioEnabled ?? (prev.callActive ? prev.audioEnabled : true),
+              videoEnabled: data.videoEnabled ?? (prev.callActive ? prev.videoEnabled : true),
               showCameraWarning: data.hasVideo === false,
               showPermissionDialog: false
             };
@@ -343,11 +344,18 @@ function App() {
         startDisabled: true,
         startLabel: "Start Call",
         label: "Ending call…",
-        status: "starting"
+        status: "ending",
+        audioAvailable: false,
+        videoAvailable: false,
       }));
       window.setTimeout(() => {
-        setCallUiState((prev) => ({ ...prev, startDisabled: false }));
-      }, 500);
+        setCallUiState((prev) => ({
+          ...prev,
+          startDisabled: false,
+          label: "Idle",
+          status: "idle",
+        }));
+      }, 800);
       return;
     }
 
@@ -404,7 +412,7 @@ function App() {
     canDock: isChatPopoutSurface || (!isChatPopoutSurface && chatPopoutOpen && activeTab === "chat")
   };
 
-  const callStateClass = cx("call-dock-state", getCallStateVariant(callUiState.label, callUiState.status === "call"));
+  const callStateClass = cx("call-dock-state", getCallStateVariant(callUiState.label, callUiState.callActive));
 
   return (
     <>
@@ -751,27 +759,9 @@ function App() {
         </div>
 
         <p className="call-footnote">
-          Call permissions and media run in the <strong>Multiplayer Call Helper</strong> background process.
+          Call permissions and media run in the <strong>Multiplayer Call Helper</strong> floating bar app.
+          Drag the bar anywhere over VS Code for quick mute, camera, and hang-up controls.
         </p>
-
-        <div className="helper-surface" id="helperSurface">
-          <div className="helper-window" id="helperWindow" role="dialog" aria-label="Embedded call helper window" data-state={callUiState.status || "idle"}>
-            <div className="helper-window-bar" id="helperWindowBar">
-              <span className="helper-window-grip" aria-hidden="true" />
-              <span className="helper-window-title">Call Helper</span>
-              <span className="helper-window-status" id="helperWindowStatus">{callUiState.label}</span>
-            </div>
-            <div className="helper-window-body">
-              <div className="helper-window-page" id="helperWindowPage">
-                <div className="helper-window-copy">
-                  <span className="helper-window-eyebrow">Call Helper</span>
-                  <strong>Ready when you are.</strong>
-                  <p>Start a call to launch the dedicated media helper and keep camera and microphone permissions separate from VS Code.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div id="permissionDialog" className="permission-overlay" hidden={!callUiState.showPermissionDialog} aria-modal="true" role="dialog" aria-labelledby="permDialogTitle">
