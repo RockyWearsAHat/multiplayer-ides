@@ -23621,15 +23621,15 @@
       showPermissionDialog: false
     };
   }
-  function getCallStateVariant(label, connected) {
+  function getCallStateVariant(label, callActive) {
     const text = String(label || "").toLowerCase();
     if (text.includes("denied") || text.includes("error") || text.includes("failed")) {
       return "state-err";
     }
-    if (connected || text === "media ready" || text === "connected") {
+    if (callActive || text.includes("ready") || text === "connected") {
       return "state-ok";
     }
-    if (text.includes("only") || text.includes("limited") || text.includes("requesting") || text.includes("starting") || text.includes("calling")) {
+    if (text.includes("only") || text.includes("limited") || text.includes("requesting") || text.includes("starting") || text.includes("calling") || text.includes("ending")) {
       return "state-warn";
     }
     return "";
@@ -23750,8 +23750,8 @@
                 startLabel: "End Call",
                 audioAvailable: data.hasAudio ?? true,
                 videoAvailable: data.hasVideo ?? true,
-                audioEnabled: true,
-                videoEnabled: true,
+                audioEnabled: data.audioEnabled ?? (prev.callActive ? prev.audioEnabled : true),
+                videoEnabled: data.videoEnabled ?? (prev.callActive ? prev.videoEnabled : true),
                 showCameraWarning: data.hasVideo === false,
                 showPermissionDialog: false
               };
@@ -23875,11 +23875,18 @@
           startDisabled: true,
           startLabel: "Start Call",
           label: "Ending call\u2026",
-          status: "starting"
+          status: "ending",
+          audioAvailable: false,
+          videoAvailable: false
         }));
         window.setTimeout(() => {
-          setCallUiState((prev) => ({ ...prev, startDisabled: false }));
-        }, 500);
+          setCallUiState((prev) => ({
+            ...prev,
+            startDisabled: false,
+            label: "Idle",
+            status: "idle"
+          }));
+        }, 800);
         return;
       }
       vscode.postMessage({ type: "start-call" });
@@ -23919,7 +23926,7 @@
       canFocus: !isChatPopoutSurface && chatPopoutOpen && activeTab === "chat",
       canDock: isChatPopoutSurface || !isChatPopoutSurface && chatPopoutOpen && activeTab === "chat"
     };
-    const callStateClass = cx("call-dock-state", getCallStateVariant(callUiState.label, callUiState.status === "call"));
+    const callStateClass = cx("call-dock-state", getCallStateVariant(callUiState.label, callUiState.callActive));
     return /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, !isChatPopoutSurface && /* @__PURE__ */ import_react.default.createElement("nav", { className: "toolbar", role: "tablist", "aria-label": "Multiplayer views" }, TAB_ORDER.map((tab) => {
       const isActive = activeTab === tab;
       return /* @__PURE__ */ import_react.default.createElement(
@@ -24054,7 +24061,7 @@
         onClick: handleToggleVideo
       },
       callUiState.videoEnabled ? "Cam Off" : "Cam On"
-    )), /* @__PURE__ */ import_react.default.createElement("div", { id: "camWarn", className: cx("cam-warn", callUiState.showCameraWarning && "show") }, "Camera denied. Enable access for ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Code Helper"), "in System Settings.", /* @__PURE__ */ import_react.default.createElement("br", null), /* @__PURE__ */ import_react.default.createElement("button", { id: "camWarnSettings", type: "button", onClick: () => vscode.postMessage({ type: "open-privacy-settings" }) }, "Open Privacy Settings"))), /* @__PURE__ */ import_react.default.createElement("p", { className: "call-footnote" }, "Call permissions and media run in the ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Call Helper"), " background process."), /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-surface", id: "helperSurface" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-window", id: "helperWindow", role: "dialog", "aria-label": "Embedded call helper window", "data-state": callUiState.status || "idle" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-window-bar", id: "helperWindowBar" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "helper-window-grip", "aria-hidden": "true" }), /* @__PURE__ */ import_react.default.createElement("span", { className: "helper-window-title" }, "Call Helper"), /* @__PURE__ */ import_react.default.createElement("span", { className: "helper-window-status", id: "helperWindowStatus" }, callUiState.label)), /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-window-body" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-window-page", id: "helperWindowPage" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "helper-window-copy" }, /* @__PURE__ */ import_react.default.createElement("span", { className: "helper-window-eyebrow" }, "Call Helper"), /* @__PURE__ */ import_react.default.createElement("strong", null, "Ready when you are."), /* @__PURE__ */ import_react.default.createElement("p", null, "Start a call to launch the dedicated media helper and keep camera and microphone permissions separate from VS Code."))))))), /* @__PURE__ */ import_react.default.createElement("div", { id: "permissionDialog", className: "permission-overlay", hidden: !callUiState.showPermissionDialog, "aria-modal": "true", role: "dialog", "aria-labelledby": "permDialogTitle" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "permission-card" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "perm-icon-row", "aria-hidden": "true" }, /* @__PURE__ */ import_react.default.createElement("svg", { width: "40", height: "40", viewBox: "0 0 40 40", fill: "none", xmlns: "http://www.w3.org/2000/svg" }, /* @__PURE__ */ import_react.default.createElement("rect", { width: "40", height: "40", rx: "9", fill: "var(--vscode-focusBorder,#007acc)", opacity: "0.18" }), /* @__PURE__ */ import_react.default.createElement("text", { x: "50%", y: "52%", dominantBaseline: "middle", textAnchor: "middle", fontSize: "9" }, "MIC"))), /* @__PURE__ */ import_react.default.createElement("div", { id: "permDialogTitle", className: "permission-title" }, "Microphone & Camera Access Denied"), /* @__PURE__ */ import_react.default.createElement("p", { className: "permission-body" }, "The ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Code Helper"), " was denied microphone/camera access. Open ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Privacy & Security"), " in System Settings, find ", /* @__PURE__ */ import_react.default.createElement("em", null, "Multiplayer Code Helper"), ", and allow it. Then click Retry."), /* @__PURE__ */ import_react.default.createElement("div", { className: "permission-actions" }, /* @__PURE__ */ import_react.default.createElement("button", { id: "permOpenSettings", type: "button", className: "perm-btn-allow flex-1", onClick: () => vscode.postMessage({ type: "open-privacy-settings" }) }, "Open Privacy Settings"), /* @__PURE__ */ import_react.default.createElement(
+    )), /* @__PURE__ */ import_react.default.createElement("div", { id: "camWarn", className: cx("cam-warn", callUiState.showCameraWarning && "show") }, "Camera denied. Enable access for ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Code Helper"), "in System Settings.", /* @__PURE__ */ import_react.default.createElement("br", null), /* @__PURE__ */ import_react.default.createElement("button", { id: "camWarnSettings", type: "button", onClick: () => vscode.postMessage({ type: "open-privacy-settings" }) }, "Open Privacy Settings"))), /* @__PURE__ */ import_react.default.createElement("p", { className: "call-footnote" }, "Call permissions and media run in the ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Call Helper"), " floating bar app. Drag the bar anywhere over VS Code for quick mute, camera, and hang-up controls.")), /* @__PURE__ */ import_react.default.createElement("div", { id: "permissionDialog", className: "permission-overlay", hidden: !callUiState.showPermissionDialog, "aria-modal": "true", role: "dialog", "aria-labelledby": "permDialogTitle" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "permission-card" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "perm-icon-row", "aria-hidden": "true" }, /* @__PURE__ */ import_react.default.createElement("svg", { width: "40", height: "40", viewBox: "0 0 40 40", fill: "none", xmlns: "http://www.w3.org/2000/svg" }, /* @__PURE__ */ import_react.default.createElement("rect", { width: "40", height: "40", rx: "9", fill: "var(--vscode-focusBorder,#007acc)", opacity: "0.18" }), /* @__PURE__ */ import_react.default.createElement("text", { x: "50%", y: "52%", dominantBaseline: "middle", textAnchor: "middle", fontSize: "9" }, "MIC"))), /* @__PURE__ */ import_react.default.createElement("div", { id: "permDialogTitle", className: "permission-title" }, "Microphone & Camera Access Denied"), /* @__PURE__ */ import_react.default.createElement("p", { className: "permission-body" }, "The ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Multiplayer Code Helper"), " was denied microphone/camera access. Open ", /* @__PURE__ */ import_react.default.createElement("strong", null, "Privacy & Security"), " in System Settings, find ", /* @__PURE__ */ import_react.default.createElement("em", null, "Multiplayer Code Helper"), ", and allow it. Then click Retry."), /* @__PURE__ */ import_react.default.createElement("div", { className: "permission-actions" }, /* @__PURE__ */ import_react.default.createElement("button", { id: "permOpenSettings", type: "button", className: "perm-btn-allow flex-1", onClick: () => vscode.postMessage({ type: "open-privacy-settings" }) }, "Open Privacy Settings"), /* @__PURE__ */ import_react.default.createElement(
       "button",
       {
         id: "permRetry",

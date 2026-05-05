@@ -11,39 +11,47 @@
 // and privacy-respecting by design.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const banner       = document.getElementById("banner");
-const statusBadge  = document.getElementById("statusBadge");
-const statusDot    = document.getElementById("statusDot");
-const localVideo   = document.getElementById("localVideo");
-const remoteVideo  = document.getElementById("remoteVideo");
-const localPlaceholder  = document.getElementById("localPlaceholder");
-const remotePlaceholder = document.getElementById("remotePlaceholder");
+const statusDetail = document.getElementById("statusDetail");
+const statusDot = document.getElementById("statusDot");
+const muteBtn = document.getElementById("muteBtn");
+const camBtn = document.getElementById("camBtn");
+const endBtn = document.getElementById("endBtn");
 
 let localStream = null;
 let pc = null;
 let audioEnabled = true;
 let videoEnabled = true;
-
-function setBanner(text, variant = "") {
-  banner.textContent = text;
-  banner.className = variant;
-}
+let audioAvailable = false;
+let videoAvailable = false;
 
 function setStatus(text, active = false) {
-  statusBadge.textContent = text;
-  statusDot.classList.toggle("inactive", !active);
+  statusDetail.textContent = text;
+  statusDot.classList.toggle("live", active);
 }
 
-function showLocalVideo(stream) {
-  localVideo.srcObject = stream;
-  localVideo.style.display = "block";
-  localPlaceholder.style.display = "none";
+function pushControlState(label) {
+  callHelper.send({
+    type: "call-controls",
+    label,
+    audioEnabled,
+    videoEnabled,
+    hasAudio: audioAvailable,
+    hasVideo: videoAvailable,
+  });
 }
 
-function showRemoteVideo(stream) {
-  remoteVideo.srcObject = stream;
-  remoteVideo.style.display = "block";
-  remotePlaceholder.style.display = "none";
+function updateControls() {
+  muteBtn.disabled = !audioAvailable;
+  camBtn.disabled = !videoAvailable;
+  endBtn.disabled = !localStream;
+
+  muteBtn.textContent = audioEnabled ? "Mute" : "Unmute";
+  muteBtn.classList.toggle("off", !audioEnabled);
+  muteBtn.classList.toggle("warn", !audioEnabled);
+
+  camBtn.textContent = videoEnabled ? "Cam Off" : "Cam On";
+  camBtn.classList.toggle("off", !videoEnabled);
+  camBtn.classList.toggle("warn", !videoEnabled);
 }
 
 // ── WebRTC peer connection ────────────────────────────────────────────────────
@@ -67,17 +75,16 @@ function ensurePeerConnection() {
     const s = pc.connectionState;
     if (s === "connected") {
       setStatus("Connected", true);
-      setBanner("Call connected", "ok");
     } else {
       setStatus(s, false);
     }
+    pushControlState(s);
     callHelper.send({ type: "call-state", text: s, connected: s === "connected" });
   };
 
-  pc.ontrack = (e) => {
-    if (e.streams[0]) {
-      showRemoteVideo(e.streams[0]);
-    }
+  pc.ontrack = () => {
+    setStatus("Connected", true);
+    pushControlState("Connected");
   };
 
   if (localStream) {
@@ -91,8 +98,8 @@ function ensurePeerConnection() {
 
 // ── Request mic + camera — this fires the real macOS permission dialog ────────
 async function startMedia(preferredConstraints = null) {
-  setBanner("macOS is asking for permission — check the system dialog…");
   setStatus("Requesting…", false);
+  updateControls();
 
   let attempts;
   if (preferredConstraints) {
@@ -120,8 +127,11 @@ async function startMedia(preferredConstraints = null) {
   }
 
   if (!attempts.length) {
-    setBanner("Permission denied — enable camera/microphone for Multiplayer Code Helper in System Settings", "error");
+    audioAvailable = false;
+    videoAvailable = false;
     setStatus("Denied", false);
+    pushControlState("Denied");
+    updateControls();
     callHelper.send({ type: "media-denied" });
     return;
   }
@@ -131,9 +141,13 @@ async function startMedia(preferredConstraints = null) {
   for (const attempt of attempts) {
     try {
       localStream = await navigator.mediaDevices.getUserMedia(attempt.constraints);
-      showLocalVideo(localStream);
+      audioAvailable = localStream.getAudioTracks().length > 0;
+      videoAvailable = localStream.getVideoTracks().length > 0;
+      audioEnabled = audioAvailable;
+      videoEnabled = videoAvailable;
       setStatus("Media ready", true);
-      setBanner(attempt.label, "ok");
+      updateControls();
+      pushControlState(attempt.label);
 
       callHelper.send({
         type: "media-ready",
@@ -163,13 +177,19 @@ async function startMedia(preferredConstraints = null) {
     lastError?.name === "PermissionDeniedError";
 
   if (denied) {
-    setBanner("Permission denied — open System Settings > Privacy and allow camera/microphone for Multiplayer Code Helper", "error");
+    audioAvailable = false;
+    videoAvailable = false;
     setStatus("Denied", false);
+    updateControls();
+    pushControlState("Denied");
     callHelper.send({ type: "media-denied" });
   } else {
     const msg = lastError?.message || "Unknown error";
-    setBanner("Could not access media: " + msg, "error");
+    audioAvailable = false;
+    videoAvailable = false;
+    updateControls();
     setStatus("Error", false);
+    pushControlState("Error");
     callHelper.send({ type: "media-error", message: msg });
   }
 }
@@ -188,8 +208,9 @@ async function startCall(preferredConstraints = null) {
     signal: { type: "offer", sdp: offer },
   });
 
-  setBanner("Calling…");
   setStatus("Calling…", true);
+  updateControls();
+  pushControlState("Calling…");
 }
 
 // ── Handle incoming RTC signal from remote peer ───────────────────────────────
@@ -210,8 +231,8 @@ async function handleRtcSignal(signal) {
       type: "rtc-signal",
       signal: { type: "answer", sdp: answer },
     });
-    setBanner("Answering…");
     setStatus("Answering…", true);
+    pushControlState("Answering…");
     return;
   }
 
@@ -236,13 +257,48 @@ function endCall() {
     pc = null;
   }
 
-  localVideo.style.display = "none";
-  remoteVideo.style.display = "none";
-  localPlaceholder.style.display = "flex";
-  remotePlaceholder.style.display = "flex";
+  audioAvailable = false;
+  videoAvailable = false;
+  audioEnabled = true;
+  videoEnabled = true;
 
-  setBanner("Call ended");
   setStatus("Idle", false);
+  updateControls();
+  pushControlState("Idle");
+}
+
+function toggleAudio() {
+  if (!localStream || !audioAvailable) {
+    return;
+  }
+  audioEnabled = !audioEnabled;
+  for (const track of localStream.getAudioTracks()) {
+    track.enabled = audioEnabled;
+  }
+  callHelper.send({ type: "mute", audio: audioEnabled });
+  updateControls();
+  pushControlState(audioEnabled ? "Mic on" : "Muted");
+}
+
+function toggleVideo() {
+  if (!localStream || !videoAvailable) {
+    return;
+  }
+  videoEnabled = !videoEnabled;
+  for (const track of localStream.getVideoTracks()) {
+    track.enabled = videoEnabled;
+  }
+  callHelper.send({ type: "video", enabled: videoEnabled });
+  updateControls();
+  pushControlState(videoEnabled ? "Cam on" : "Cam off");
+}
+
+function hangUpFromBar() {
+  if (!localStream && !pc) {
+    return;
+  }
+  callHelper.send({ type: "call-ended" });
+  callHelper.closeWindow();
 }
 
 // ── Message bus: extension → renderer ────────────────────────────────────────
@@ -252,7 +308,8 @@ callHelper.onMessage((msg) => {
   if (msg.type === "start-call") {
     startCall(msg.constraints || null).catch((e) => {
       const text = e?.message || String(e);
-      setBanner("Call error: " + text, "error");
+      setStatus("Error", false);
+      pushControlState("Error");
       callHelper.send({ type: "media-error", message: text });
     });
     return;
@@ -272,6 +329,8 @@ callHelper.onMessage((msg) => {
     if (localStream) {
       for (const t of localStream.getAudioTracks()) { t.enabled = Boolean(msg.audio); }
       audioEnabled = Boolean(msg.audio);
+      updateControls();
+      pushControlState(audioEnabled ? "Mic on" : "Muted");
     }
     return;
   }
@@ -280,10 +339,17 @@ callHelper.onMessage((msg) => {
     if (localStream) {
       for (const t of localStream.getVideoTracks()) { t.enabled = Boolean(msg.enabled); }
       videoEnabled = Boolean(msg.enabled);
+      updateControls();
+      pushControlState(videoEnabled ? "Cam on" : "Cam off");
     }
     return;
   }
 });
+
+muteBtn.addEventListener("click", toggleAudio);
+camBtn.addEventListener("click", toggleVideo);
+endBtn.addEventListener("click", hangUpFromBar);
+updateControls();
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // Tell main.js the renderer is ready — this triggers the IPC connection to

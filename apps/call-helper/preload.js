@@ -15,4 +15,7 @@ contextBridge.exposeInMainWorld("callHelper", {
   onMessage: (callback) => {
     ipcRenderer.on("ipc", (_event, msg) => callback(msg));
   },
+
+  /** Request the main process to close the floating helper window. */
+  closeWindow: () => ipcRenderer.send("helper-close-window"),
 });

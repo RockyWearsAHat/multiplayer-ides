@@ -833,7 +833,7 @@ video {
 }
 
 .helper-window-body {
-  background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   min-height: 220px;
 }
 
@@ -862,7 +862,19 @@ video {
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: #506072;
+  color: var(--vscode-descriptionForeground);
+}
+
+.helper-code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  background: color-mix(in srgb, var(--vscode-textCodeBlock-background, var(--vscode-editor-background)) 90%, transparent);
+  border: 1px solid var(--mp-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  display: inline;
 }
 
 .helper-window-eyebrow {
@@ -871,12 +883,24 @@ video {
   width: fit-content;
   padding: 4px 8px;
   border-radius: 999px;
-  background: #e7eef8;
-  color: #44556a;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  color: var(--vscode-descriptionForeground);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+.helper-window-eyebrow--ok {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 16%, transparent);
+  color: var(--vscode-testing-iconPassed, #2ea043);
+}
+.helper-window-eyebrow--warn {
+  background: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 16%, transparent);
+  color: var(--vscode-charts-orange, #b45309);
+}
+.helper-window-eyebrow--err {
+  background: color-mix(in srgb, var(--vscode-errorForeground, #f44747) 14%, transparent);
+  color: var(--vscode-errorForeground, #c0392b);
 }
 
 .helper-window[data-state="starting"],
@@ -892,6 +916,70 @@ video {
 .helper-window[data-state="error"],
 .helper-window[data-state="denied"] {
   border-color: color-mix(in srgb, var(--vscode-errorForeground, #f44747) 55%, var(--mp-border));
+}
+
+.helper-window[data-state="ending"] {
+  border-color: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 45%, var(--mp-border));
+}
+.helper-window[data-state="ending"] .helper-window-status {
+  color: var(--vscode-charts-orange, #e8a63a);
+}
+
+/* ── Track badges (mic/cam status inside active call window) ── */
+.helper-track-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.helper-track-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--mp-border);
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+  color: var(--vscode-descriptionForeground);
+}
+.helper-track-badge--on {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 14%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 50%, transparent);
+  color: var(--vscode-testing-iconPassed, #2ea043);
+}
+.helper-track-badge--muted {
+  background: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 14%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-charts-orange, #e8a63a) 50%, transparent);
+  color: var(--vscode-charts-orange, #b45309);
+}
+.helper-track-badge--off {
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+  border-color: var(--mp-border);
+  color: var(--mp-text-muted);
+  opacity: 0.7;
+}
+
+/* ── Spinner for starting/ending states ── */
+.helper-spinner {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
+  border-top-color: var(--vscode-charts-orange, #e8a63a);
+  border-radius: 50%;
+  animation: helper-spin 800ms linear infinite;
+  margin-top: 6px;
+}
+@keyframes helper-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Active call page layout ── */
+.helper-window-page--active {
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 6%, transparent);
 }
 
 .helper-window[data-state="starting"] .helper-window-status,

@@ -263,6 +263,23 @@ class CallHelperManager {
         this._clearStartTimeout();
         this._onState({ status: "call", text: msg.text, connected: Boolean(msg.connected) });
         break;
+      case "call-controls":
+        this._onState({
+          status: this._active ? "call" : "idle",
+          text: msg.label || "In call",
+          connected: this._active,
+          hasAudio: msg.hasAudio,
+          hasVideo: msg.hasVideo,
+          audioEnabled: msg.audioEnabled,
+          videoEnabled: msg.videoEnabled,
+        });
+        break;
+      case "mute":
+        this.sendToHelper({ type: "mute", audio: Boolean(msg.audio) });
+        break;
+      case "video":
+        this.sendToHelper({ type: "video", enabled: Boolean(msg.enabled) });
+        break;
       case "call-ended":
         this._clearStartTimeout();
         this._active = false;
