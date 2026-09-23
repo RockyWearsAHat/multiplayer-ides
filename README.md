@@ -100,6 +100,7 @@ VSIX bundles the standalone helper runtime.
 - `Multiplayer: Host Session`
 - `Multiplayer: Join Session`
 - `Multiplayer: Open Multiplayer Panel`
+- `Multiplayer: Open Multiplayer Chat Window`
 - `Multiplayer: Toggle Invite Policy`
 - `Multiplayer: End Session`
 

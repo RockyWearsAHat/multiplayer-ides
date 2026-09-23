@@ -13,7 +13,7 @@ This extension now runs multiplayer setup directly inside VS Code.
    - voice/video call controls
 5. Optional: open browser-style editor tabs with:
    - `Multiplayer: Open Multiplayer Workspace Tab`
-   - `Multiplayer: Open Multiplayer Chat Tab`
+   - `Multiplayer: Open Multiplayer Chat Window`
 5. Edit files and watch live sync.
 
 ## Commands
@@ -23,7 +23,7 @@ This extension now runs multiplayer setup directly inside VS Code.
 - `Multiplayer: Join Session`
 - `Multiplayer: Open Multiplayer Panel`
 - `Multiplayer: Open Multiplayer Workspace Tab`
-- `Multiplayer: Open Multiplayer Chat Tab`
+- `Multiplayer: Open Multiplayer Chat Window`
 - `Multiplayer: Toggle Invite Policy`
 - `Multiplayer: End Session`
 

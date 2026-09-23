@@ -28,25 +28,23 @@ body {
   color: var(--vscode-foreground);
   background: var(--mp-surface);
   overflow: hidden;
-  padding: 12px;
-  gap: 12px;
+  padding: 10px;
+  gap: 8px;
   line-height: 1.5;
 }
 
 /* ─── Tab bar ─── */
 .toolbar {
   display: flex;
-  align-items: stretch;
-  min-height: 40px;
+  align-items: center;
   flex-shrink: 0;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--vscode-panel-background, var(--mp-surface)) 94%, transparent);
-  padding: 3px;
-  gap: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mp-border) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
 }
 .toolbar::-webkit-scrollbar { display: none; }
 
@@ -54,32 +52,31 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 15px;
-  border: 1px solid transparent;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--vscode-panelTitle-inactiveForeground, var(--mp-text-muted));
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  border-radius: var(--mp-radius);
-  transition: all 140ms cubic-bezier(0.2, 0, 0.38, 0.9);
+  margin-bottom: -1px;
+  transition: color 140ms, border-color 140ms;
 }
 .tab:hover {
   color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
-  background: color-mix(in srgb, var(--vscode-toolbar-hoverBackground, var(--vscode-focusBorder)) 18%, transparent);
+  background: transparent;
 }
 .tab.active {
   color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
-  border-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, var(--mp-border));
-  background: color-mix(in srgb, var(--vscode-focusBorder) 14%, var(--vscode-editor-background));
+  border-bottom-color: var(--vscode-focusBorder);
   font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 12%, transparent);
+  background: transparent;
+  box-shadow: none;
 }
 
 .tab-badge {
@@ -102,15 +99,11 @@ body {
 .session-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
+  gap: 10px;
+  padding: 6px 0;
   flex-shrink: 0;
-  height: 38px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--vscode-panel-background, var(--mp-surface)) 94%, var(--vscode-focusBorder));
-  transition: background 200ms;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+  height: 34px;
+  background: transparent;
 }
 
 .conn-dot {
@@ -211,15 +204,22 @@ body {
 
 /* ─── Layout helpers ─── */
 .section {
-  padding: 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--mp-card-bg) 92%, var(--vscode-focusBorder));
-  transition: all 200ms;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
+  padding: 12px 0;
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+}
+.section + .section {
+  border-top: 1px solid color-mix(in srgb, var(--mp-border) 40%, transparent);
 }
 .section:last-child { margin-bottom: 0; }
+
+.idle-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+}
 
 .section-head {
   display: flex;
@@ -228,24 +228,19 @@ body {
   margin-bottom: 10px;
 }
 .section-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  opacity: 0.82;
-  transition: opacity 200ms;
+  opacity: 0.55;
 }
-.section:hover .section-title { opacity: 1; }
 
 .divider {
   height: 1px;
-  background: var(--mp-border);
-  margin: 2px 0 12px;
-  opacity: 0.42;
-  transition: opacity 200ms;
+  background: color-mix(in srgb, var(--mp-border) 55%, transparent);
+  margin: 0 0 10px;
 }
-.divider:hover { opacity: 0.7; }
 
 .row   { display: flex; gap: var(--mp-gap); }
 .row { align-items: center; }
@@ -449,21 +444,18 @@ input[type="range"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  height: 40px;
+  padding: 0 2px;
+  height: 36px;
   flex-shrink: 0;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius) var(--mp-radius) 0 0;
-  background: color-mix(in srgb, var(--vscode-editor-background, var(--mp-surface)) 97%, var(--vscode-focusBorder));
-  border-bottom: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 38%, var(--mp-border));
+  border-bottom: 1px solid color-mix(in srgb, var(--mp-border) 55%, transparent);
 }
 .chat-header-title {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.9;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground));
-  opacity: 0.85;
+  letter-spacing: 0.06em;
 }
 .chat-header-actions { display: flex; align-items: center; gap: 4px; }
 
@@ -471,35 +463,30 @@ input[type="range"] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--vscode-editor-background, var(--mp-surface));
-  border-left: 1px solid var(--mp-border);
-  border-right: 1px solid var(--mp-border);
+  background: transparent;
   scrollbar-width: thin;
   scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
 }
 .chat-messages {
-  padding: 14px;
+  padding: 10px 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
 
 .chat-msg {
-  padding: 10px 12px;
-  border-radius: var(--mp-radius);
+  padding: 6px 4px;
+  border-radius: 4px;
   line-height: 1.55;
-  transition: all 120ms ease;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--vscode-editor-background, transparent) 88%, transparent);
+  background: transparent;
 }
 .chat-msg:hover {
-  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 60%, transparent);
-  border-color: color-mix(in srgb, var(--vscode-focusBorder) 30%, transparent);
+  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 50%, transparent);
 }
 .chat-msg .msg-meta {
   font-size: 10px;
   color: var(--mp-text-muted);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -510,7 +497,7 @@ input[type="range"] {
   color: var(--vscode-foreground);
   font-size: 11px;
 }
-.chat-msg .msg-time { font-size: 9px; opacity: 0.6; }
+.chat-msg .msg-time { font-size: 9px; opacity: 0.5; }
 .chat-msg .msg-body {
   font-size: 12px;
   line-height: 1.6;
@@ -521,15 +508,13 @@ input[type="range"] {
 
 .chat-composer {
   flex-shrink: 0;
-  border: 1px solid var(--mp-border);
-  border-top: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 38%, var(--mp-border));
-  border-radius: 0 0 var(--mp-radius) var(--mp-radius);
-  padding: 12px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--mp-border) 55%, transparent);
+  padding: 10px 0;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
-  background: var(--vscode-editor-background, var(--mp-surface));
+  background: transparent;
 }
 #chatInput {
   height: 32px !important;
@@ -590,19 +575,18 @@ video {
 
 /* ─── Invite cards ─── */
 .invite-card {
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--vscode-editor-background) 97%, transparent);
-  padding: 15px;
+  padding: 10px 0;
+  border: none;
+  background: transparent;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: all 200ms;
+  gap: 8px;
 }
-.invite-card:hover {
-  border-color: var(--vscode-focusBorder);
-  background: color-mix(in srgb, var(--vscode-editor-background) 98%, var(--vscode-focusBorder));
+.invite-card + .invite-card {
+  border-top: 1px solid color-mix(in srgb, var(--mp-border) 40%, transparent);
+  margin-top: 4px;
 }
+.invite-card:hover { background: transparent; }
 
 .invite-card-header { display: flex; flex-direction: column; gap: 4px; }
 .invite-card-title {
@@ -719,21 +703,13 @@ video {
 }
 
 .call-dock {
-  border: 1px solid var(--mp-border);
-  border-left: 3px solid transparent;
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--mp-card-bg) 94%, var(--vscode-focusBorder));
-  padding: 16px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  transition: all 200ms ease;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  gap: 12px;
 }
-.call-dock.call-active {
-  border-left-color: var(--vscode-testing-iconPassed, #4ec94e);
-  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 8%, transparent);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 12px color-mix(in srgb, var(--vscode-testing-iconPassed, #4ec94e) 20%, transparent);
+.call-dock.call-active .call-dock-status-row .call-dock-state {
+  color: var(--vscode-testing-iconPassed, #4ec94e);
 }
 
 .call-dock-status-row {
@@ -1032,10 +1008,10 @@ video {
   flex-direction: column;
   gap: 12px;
   margin: 0;
-  padding: 16px;
-  border: 1px solid var(--mp-border);
-  border-radius: var(--mp-radius);
-  background: color-mix(in srgb, var(--mp-card-bg) 95%, var(--vscode-focusBorder));
+  padding: 14px 0 4px;
+  border: none;
+  background: transparent;
+  border-top: 1px solid color-mix(in srgb, var(--mp-border) 50%, transparent);
   animation: slidein 180ms cubic-bezier(0.2, 0, 0.38, 0.9);
 }
 .inline-form.open { display: flex; }

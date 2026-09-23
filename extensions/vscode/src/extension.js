@@ -16,6 +16,194 @@ let sessionService = null;
 let suppressChanges = false;
 let latestParticipants = [];
 let latestChatMessages = [];
+let shownAccessibilityWarning = false;
+
+function warnMissingAccessibility() {
+  if (shownAccessibilityWarning) {
+    return;
+  }
+
+  shownAccessibilityWarning = true;
+  vscode.window.showWarningMessage(
+    "Multiplayer Code Helper needs macOS Accessibility permission to anchor chat/call to the VS Code window. Enable it in System Settings > Privacy & Security > Accessibility."
+  );
+}
+
+/** Resolve the IDE process/window context we should bind to.
+ *  On macOS, capture the frontmost IDE PID + front window title at invocation
+ *  time so Extension Development Host binds to the exact launching window.
+ */
+function detectLaunchingIdeContext(appName) {
+  const fallback = Number(process.env.VSCODE_PID || process.ppid || 0);
+  const fallbackPid = Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+  if (process.platform !== "darwin") {
+    return { pid: fallbackPid, windowTitle: null };
+  }
+
+  try {
+    const out = spawnSync("osascript", [
+      "-e",
+      'tell application "System Events"',
+      "set p to first process whose frontmost is true",
+      "set wname to \"\"",
+      "try",
+      "  if (count of windows of p) > 0 then",
+      "    set wname to name of front window of p",
+      "  end if",
+      "end try",
+      'return (name of p) & "|" & (unix id of p) & "|" & wname',
+      "end tell",
+    ], { encoding: "utf8", timeout: 1500 });
+
+    const text = String(out.stdout || "").trim();
+    const [frontNameRaw, frontPidRaw, frontWindowRaw] = text.split("|");
+    const frontName = String(frontNameRaw || "").trim();
+    const frontPid = Number(frontPidRaw);
+    const frontWindow = String(frontWindowRaw || "").trim();
+    const ideLike = [appName, "Visual Studio Code", "Code", "Cursor", "Windsurf", "VSCodium"]
+      .filter(Boolean)
+      .some((n) => frontName.toLowerCase().includes(String(n).toLowerCase()));
+
+    if (ideLike && Number.isFinite(frontPid) && frontPid > 0) {
+      return { pid: frontPid, windowTitle: frontWindow || null };
+    }
+  } catch {
+    // Fall back below.
+  }
+
+  return { pid: fallbackPid, windowTitle: null };
+}
+
+/** Detect VS Code window bounds via Quartz (macOS only).
+ *  Prefers exact PID match when provided, then falls back to owner-name match.
+ *  Returns {x,y,width,height} or null.
+ */
+function detectVSCodeWindowBounds(targetPid = null, targetTitle = null) {
+  if (process.platform !== "darwin") return null;
+
+  const appName = typeof vscode.env.appName === "string" ? vscode.env.appName.trim() : "";
+  const candidates = [];
+  const push = (n) => { const s = String(n||"").trim(); if (s && !candidates.includes(s)) candidates.push(s); };
+  push(appName);
+  push(appName.replace(/^Visual Studio /i, ""));
+  ["Visual Studio Code - Insiders","Visual Studio Code","Code - Insiders","Code",
+   "Cursor","Windsurf","VSCodium"].forEach(push);
+
+  const namesLiteral = JSON.stringify(candidates);
+  const pyScript = [
+    "import sys, json",
+    "try:",
+    "  from Quartz import CGWindowListCopyWindowInfo, kCGWindowListOptionAll, kCGNullWindowID",
+    "  target_pid = None",
+    "  target_title = None",
+    "  if len(sys.argv) > 1:",
+    "    try:",
+    "      target_pid = int(sys.argv[1])",
+    "    except Exception:",
+    "      target_pid = None",
+    "  if len(sys.argv) > 2:",
+    "    t = (sys.argv[2] or '').strip()",
+    "    if t:",
+    "      target_title = t.lower()",
+    `  names = set(json.loads(r'''${namesLiteral}'''))`,
+    "  wl = CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID) or []",
+    "  best_title = None",
+    "  best_pid = None",
+    "  best_name = None",
+    "  for w in wl:",
+    "    if w.get('kCGWindowLayer', 0) != 0: continue",
+    "    b = w.get('kCGWindowBounds') or {}",
+    "    wx,wy,ww,wh = int(b.get('X',0)),int(b.get('Y',0)),int(b.get('Width',0)),int(b.get('Height',0))",
+    "    if ww < 220 or wh < 160: continue",
+    "    pid = int(w.get('kCGWindowOwnerPID', -1))",
+    "    name = w.get('kCGWindowOwnerName')",
+    "    title = str(w.get('kCGWindowName') or '').lower()",
+    "    area = ww*wh",
+    "    if target_title is not None and target_title in title:",
+    "      if best_title is None or area > best_title[4]: best_title = (wx,wy,ww,wh,area)",
+    "    if target_pid is not None and pid == target_pid:",
+    "      if best_pid is None or area > best_pid[4]: best_pid = (wx,wy,ww,wh,area)",
+    "    if name in names:",
+    "      if best_name is None or area > best_name[4]: best_name = (wx,wy,ww,wh,area)",
+    "  best = best_title or best_pid or best_name",
+    "  if best: print(f'{best[0]}|{best[1]}|{best[2]}|{best[3]}')",
+    "except Exception as e:",
+    "  sys.stderr.write(str(e)+'\\n')",
+  ].join("\n");
+
+  const pythonCandidates = [
+    "/usr/local/bin/python3",
+    "/opt/homebrew/bin/python3",
+    "/usr/bin/python3",
+    "python3",
+  ];
+
+  for (const py of pythonCandidates) {
+    try {
+      const result = spawnSync(py, ["-c", pyScript, String(targetPid || ""), String(targetTitle || "")], { encoding: "utf8", timeout: 5000 });
+      if (result.status === 0 && result.stdout) {
+        const out = result.stdout.trim();
+        const parts = out.split("|").map(Number);
+        if (parts.length === 4 && parts.every(n => !isNaN(n)) && parts[2] >= 220 && parts[3] >= 160) {
+          return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+        }
+      }
+    } catch (_) { /* try next */ }
+  }
+  return null;
+}
+
+function buildIdeAnchorArgs() {
+  const args = [];
+  const appName = typeof vscode.env.appName === "string" ? vscode.env.appName.trim() : "";
+  if (appName) args.push(`--ide-app-name=${appName}`);
+
+  const uriScheme = String(vscode.env.uriScheme || "").toLowerCase();
+  const bundleByScheme = {
+    vscode: "com.microsoft.VSCode",
+    "vscode-insiders": "com.microsoft.VSCodeInsiders",
+    vscodium: "com.vscodium",
+    cursor: "com.todesktop.230313mzl4w4u92",
+    windsurf: "com.exafunction.windsurf",
+  };
+  const bundleId = bundleByScheme[uriScheme] || "";
+  if (bundleId) args.push(`--ide-bundle-id=${bundleId}`);
+
+  const launchCtx = detectLaunchingIdeContext(appName);
+  const launchingIdePid = launchCtx?.pid || null;
+  const launchingWindowTitle = launchCtx?.windowTitle || null;
+  if (launchingIdePid) args.push(`--ide-pid=${launchingIdePid}`);
+  if (launchingWindowTitle) args.push(`--ide-window-title=${launchingWindowTitle}`);
+
+  // Detect VS Code's window bounds here (extension has full shell PATH) and
+  // pass them directly so the helper never needs to re-detect them.
+  const bounds = detectVSCodeWindowBounds(launchingIdePid, launchingWindowTitle);
+  if (bounds) {
+    args.push(`--anchor-x=${bounds.x}`);
+    args.push(`--anchor-y=${bounds.y}`);
+    args.push(`--anchor-w=${bounds.width}`);
+    args.push(`--anchor-h=${bounds.height}`);
+    vscode.window.showInformationMessage(`[anchor] ext detected: ${bounds.width}x${bounds.height} @ (${bounds.x},${bounds.y}) pid=${launchingIdePid || "?"} title=${launchingWindowTitle || "?"}`);
+  } else {
+    vscode.window.showWarningMessage(`[anchor] ext detection FAILED pid=${launchingIdePid || "?"} title=${launchingWindowTitle || "?"} — no bounds passed to helper`);
+  }
+
+  return args;
+}
+
+function buildIdeWindowBoundsPayload() {
+  const appName = typeof vscode.env.appName === "string" ? vscode.env.appName.trim() : "";
+  const launchCtx = detectLaunchingIdeContext(appName);
+  const bounds = detectVSCodeWindowBounds(launchCtx?.pid || null, launchCtx?.windowTitle || null);
+  if (!bounds) {
+    return null;
+  }
+
+  return {
+    type: "ide-window-bounds",
+    bounds,
+  };
+}
 
 // ── CallHelperManager ─────────────────────────────────────────────────────────
 // Manages the lifecycle of the standalone companion helper process that handles
@@ -25,10 +213,13 @@ let latestChatMessages = [];
 // a real OS-level permission dialog for "Multiplayer Code Helper", not VS Code.
 // ─────────────────────────────────────────────────────────────────────────────
 class CallHelperManager {
-  constructor({ helperDir, onState, onRtcSignal }) {
+  constructor({ helperDir, onState, onRtcSignal, onSendChat, onChatWindowState, onChatWindowReady }) {
     this._helperDir    = helperDir;
     this._onState      = onState;
     this._onRtcSignal  = onRtcSignal;
+    this._onSendChat = onSendChat;
+    this._onChatWindowState = onChatWindowState;
+    this._onChatWindowReady = onChatWindowReady;
     this._server       = null;
     this._socket       = null;
     this._process      = null;
@@ -106,7 +297,7 @@ class CallHelperManager {
 
       this._process = spawn(
         launchSpec.command,
-        [...launchSpec.args, `--ipc-port=${port}`],
+        [...launchSpec.args, `--ipc-port=${port}`, ...buildIdeAnchorArgs()],
         { stdio: ["ignore", "pipe", "pipe"], env: childEnv }
       );
 
@@ -238,7 +429,11 @@ class CallHelperManager {
   _handleHelperMessage(msg) {
     switch (msg.type) {
       case "helper-ready":
+        if (msg.accessibilityTrusted === false) {
+          warnMissingAccessibility();
+        }
         // Helper connected — tell it to start the call immediately
+        this.sendToHelper({ type: "focus-overlay-window" });
         this._onState({ status: "starting", text: "Requesting camera and microphone permission…" });
         this.sendToHelper({ type: "start-call" });
         break;
@@ -289,6 +484,24 @@ class CallHelperManager {
       case "rtc-signal":
         this._onRtcSignal(msg.signal);
         break;
+      case "send-chat":
+        this._onSendChat?.(msg.text || "");
+        break;
+      case "chat-window-ready":
+        this._onChatWindowState?.(true);
+        this._onChatWindowReady?.();
+        break;
+      case "chat-window-closed":
+        this._onChatWindowState?.(false);
+        break;
+      case "anchor-debug": {
+        const { source, bounds, idePid } = msg;
+        const b = bounds ? `${bounds.width}x${bounds.height} @ (${bounds.x},${bounds.y})` : "?";
+        vscode.window.showInformationMessage(
+          `[Multiplayer anchor] source=${source} pid=${idePid} bounds=${b}`
+        );
+        break;
+      }
     }
   }
 
@@ -328,103 +541,11 @@ class CallHelperManager {
   }
 
   _ensureMacHelperIdentity(electronRoot) {
-    const distDir = path.join(electronRoot, "dist");
-    const defaultBundle = path.join(distDir, "Electron.app");
-    const helperBundle = path.join(distDir, "Multiplayer Code Helper.app");
-
-    if (!fs.existsSync(distDir)) {
-      return null;
-    }
-
-    // Ensure both packaged and dev helper paths present a stable helper name.
-    if (fs.existsSync(defaultBundle) && !fs.existsSync(helperBundle)) {
-      try {
-        fs.renameSync(defaultBundle, helperBundle);
-      } catch {
-        // Fallback: copy when rename is blocked by filesystem semantics.
-        try {
-          fs.cpSync(defaultBundle, helperBundle, { recursive: true });
-        } catch {
-          // Keep default bundle path as last resort.
-        }
-      }
-    }
-
-    const appBundle = fs.existsSync(helperBundle) ? helperBundle : defaultBundle;
-    if (!fs.existsSync(appBundle)) {
-      return null;
-    }
-
-    const plistPath = path.join(appBundle, "Contents", "Info.plist");
-    const plistPatches = {
-      CFBundleDisplayName: "Multiplayer Code Helper",
-      CFBundleName: "Multiplayer Code Helper",
-      CFBundleIdentifier: "com.multiplayercode.helper",
-      NSCameraUsageDescription: "Multiplayer Code Helper uses your camera for video calls.",
-      NSMicrophoneUsageDescription: "Multiplayer Code Helper uses your microphone for voice calls.",
-    };
-
-    if (fs.existsSync(plistPath)) {
-      for (const [key, value] of Object.entries(plistPatches)) {
-        spawnSync("plutil", ["-replace", key, "-string", value, plistPath], { stdio: "ignore" });
-      }
-
-      // Re-sign after mutating Info.plist so LaunchServices/TCC sees a valid app.
-      spawnSync("codesign", ["--force", "--sign", "-", appBundle], {
-        stdio: "ignore"
-      });
-    }
-
-    return appBundle;
+    return _sharedEnsureMacHelperIdentity(electronRoot);
   }
 
   _resolveElectronLaunch(mainScript) {
-    const electronRoot = path.join(this._helperDir, "node_modules", "electron");
-
-    if (process.platform === "darwin") {
-      const appBundle = this._ensureMacHelperIdentity(electronRoot);
-
-      // On macOS we MUST launch via `open -a` so LaunchServices owns the process
-      // launch.  When spawned directly as a child of the VS Code extension host,
-      // macOS TCC attributes camera/mic requests to the responsible parent process
-      // (VS Code Insiders) rather than to our helper's bundle identity, regardless
-      // of what bundle ID is in Info.plist.  Launching through `open` makes macOS
-      // treat the helper as a user-initiated process with its own TCC identity so
-      // the permission dialog reads "Multiplayer Code Helper would like to access
-      // your camera" instead of attributing it to VS Code.
-      if (appBundle && fs.existsSync(appBundle)) {
-        return {
-          command: "open",
-          // -g         — launch in background (avoid focus/Space jump)
-          // <app path> — explicit bundle path, avoids name-based resolution
-          // --args     — everything after this is forwarded to the app as argv
-          args: ["-g", appBundle, "--args", mainScript],
-          usesOpen: true,
-        };
-      }
-    }
-
-    // Linux / Windows — spawn the binary directly
-    const directExecutable = process.platform === "win32"
-      ? path.join(electronRoot, "dist", "electron.exe")
-      : path.join(electronRoot, "dist", "electron");
-
-    if (fs.existsSync(directExecutable)) {
-      return {
-        command: directExecutable,
-        args: [mainScript],
-      };
-    }
-
-    const electronCli = path.join(electronRoot, "cli.js");
-    if (fs.existsSync(electronCli)) {
-      return {
-        command: process.execPath,
-        args: [electronCli, mainScript],
-      };
-    }
-
-    return null;
+    return _sharedResolveElectronLaunch(this._helperDir, mainScript);
   }
 
   _appendStderrLine(textChunk) {
@@ -442,7 +563,271 @@ class CallHelperManager {
   }
 }
 
+// ── Shared electron-launch helpers ───────────────────────────────────────────
+// Shared by both CallHelperManager and ChatWindowManager so the macOS identity
+// setup and binary resolution logic lives in exactly one place.
+
+function _sharedEnsureMacHelperIdentity(electronRoot) {
+  const distDir = path.join(electronRoot, "dist");
+  const defaultBundle = path.join(distDir, "Electron.app");
+  const helperBundle = path.join(distDir, "Multiplayer Code Helper.app");
+
+  if (!fs.existsSync(distDir)) return null;
+
+  if (fs.existsSync(defaultBundle) && !fs.existsSync(helperBundle)) {
+    try {
+      fs.renameSync(defaultBundle, helperBundle);
+    } catch {
+      try {
+        fs.cpSync(defaultBundle, helperBundle, { recursive: true });
+      } catch {
+        /* keep default */
+      }
+    }
+  }
+
+  const appBundle = fs.existsSync(helperBundle) ? helperBundle : defaultBundle;
+  if (!fs.existsSync(appBundle)) return null;
+
+  const plistPath = path.join(appBundle, "Contents", "Info.plist");
+  const plistPatches = {
+    CFBundleDisplayName: "Multiplayer Code Helper",
+    CFBundleName: "Multiplayer Code Helper",
+    CFBundleIdentifier: "com.multiplayercode.helper",
+    NSCameraUsageDescription: "Multiplayer Code Helper uses your camera for video calls.",
+    NSMicrophoneUsageDescription: "Multiplayer Code Helper uses your microphone for voice calls.",
+  };
+
+  if (fs.existsSync(plistPath)) {
+    for (const [key, value] of Object.entries(plistPatches)) {
+      spawnSync("plutil", ["-replace", key, "-string", value, plistPath], { stdio: "ignore" });
+    }
+    spawnSync("codesign", ["--force", "--sign", "-", appBundle], { stdio: "ignore" });
+  }
+
+  return appBundle;
+}
+
+function _sharedResolveElectronLaunch(helperDir, mainScript) {
+  const electronRoot = path.join(helperDir, "node_modules", "electron");
+
+  if (process.platform === "darwin") {
+    const appBundle = _sharedEnsureMacHelperIdentity(electronRoot);
+    if (appBundle && fs.existsSync(appBundle)) {
+      return {
+        command: "open",
+        // -n forces a new instance even if one is already running (prevents
+        // macOS from reusing an existing call-helper process for the chat window
+        // or vice-versa, since they share the same .app bundle).
+        // Intentionally avoid `-g`: windows created by background launch can
+        // appear on desktop space instead of the active IDE space.
+        args: ["-n", appBundle, "--args", mainScript],
+        usesOpen: true,
+      };
+    }
+  }
+
+  const directExecutable = process.platform === "win32"
+    ? path.join(electronRoot, "dist", "electron.exe")
+    : path.join(electronRoot, "dist", "electron");
+
+  if (fs.existsSync(directExecutable)) {
+    return { command: directExecutable, args: [mainScript] };
+  }
+
+  const electronCli = path.join(electronRoot, "cli.js");
+  if (fs.existsSync(electronCli)) {
+    return { command: process.execPath, args: [electronCli, mainScript] };
+  }
+
+  return null;
+}
+
+// ── ChatWindowManager ─────────────────────────────────────────────────────────
+// Manages the lifecycle of the floating native chat overlay window.
+// Uses the same call-helper Electron process launched with --chat.
+// ─────────────────────────────────────────────────────────────────────────────
+class ChatWindowManager {
+  /**
+   * @param {{ helperDir: string, onSendChat: (text: string) => void,
+   *           onStateChange: (open: boolean) => void, onReady: () => void }} opts
+   */
+  constructor({ helperDir, onSendChat, onStateChange, onReady }) {
+    this._helperDir      = helperDir;
+    this._onSendChat     = onSendChat;
+    this._onStateChange  = onStateChange;
+    this._onReady        = onReady;
+    this._server         = null;
+    this._socket         = null;
+    this._process        = null;
+    this._open           = false;
+    this._shutdownPromise = null;
+  }
+
+  isOpen() { return this._open; }
+
+  /** Forward a message to the chat window renderer. */
+  forward(msg) {
+    if (this._socket && this._socket.readyState === 1 /* OPEN */) {
+      this._socket.send(JSON.stringify(msg));
+    }
+  }
+
+  /** Open the floating chat window. Resolves when the process is spawned. */
+  async open() {
+    if (this._shutdownPromise) {
+      await this._shutdownPromise;
+    }
+
+    if (this._open) {
+      this.forward({ type: "focus-overlay-window" });
+      return;
+    }
+
+    const mainScript = path.join(this._helperDir, "main.js");
+    const launchSpec = _sharedResolveElectronLaunch(this._helperDir, mainScript);
+
+    if (!fs.existsSync(mainScript) || !launchSpec) {
+      vscode.window.showErrorMessage(
+        "Chat helper not available. Run: cd apps/call-helper && npm install"
+      );
+      return;
+    }
+
+    this._open = true;
+
+    try {
+      const port = await this._getFreePort();
+      const childEnv = { ...process.env };
+      delete childEnv.ELECTRON_RUN_AS_NODE;
+
+      this._server = new WebSocketServer({ host: "127.0.0.1", port });
+
+      this._server.on("connection", (sock) => {
+        this._socket = sock;
+        this._onStateChange?.(true);
+
+        sock.on("message", (data) => {
+          try {
+            this._handleHelperMessage(JSON.parse(data.toString()));
+          } catch {
+            /* ignore malformed frames */
+          }
+        });
+
+        sock.on("close", () => {
+          this._socket = null;
+          if (this._open) {
+            this._open = false;
+            this._onStateChange?.(false);
+            this._cleanup();
+          }
+        });
+      });
+
+      const extraArgs = [`--ipc-port=${port}`, "--chat", ...buildIdeAnchorArgs()];
+      const spawnArgs = [...launchSpec.args, ...extraArgs];
+
+      this._process = spawn(launchSpec.command, spawnArgs, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: childEnv,
+      });
+
+      this._process.on("exit", () => {
+        this._process = null;
+        if (launchSpec.usesOpen) return; // macOS: open exits immediately, lifecycle via WS
+        if (this._open) {
+          this._open = false;
+          this._onStateChange?.(false);
+          this._cleanup();
+        }
+      });
+
+      this._process.on("error", () => {
+        this._open = false;
+        this._onStateChange?.(false);
+        this._cleanup();
+      });
+
+    } catch (err) {
+      this._open = false;
+      vscode.window.showErrorMessage("Failed to open chat window: " + err.message);
+      this._cleanup();
+    }
+  }
+
+  /** Close the floating chat window. */
+  async close() {
+    if (this._shutdownPromise) return this._shutdownPromise;
+
+    this._shutdownPromise = (async () => {
+      if (!this._open && !this._socket && !this._server && !this._process) return;
+
+      this._open = false;
+      try { this.forward({ type: "close-chat-window" }); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 200));
+      this._cleanup();
+    })().finally(() => { this._shutdownPromise = null; });
+
+    return this._shutdownPromise;
+  }
+
+  /** Release all resources (called on extension deactivate). */
+  dispose() { return this.close(); }
+
+  _handleHelperMessage(msg) {
+    if (msg.type === "helper-ready") {
+      if (msg.accessibilityTrusted === false) {
+        warnMissingAccessibility();
+      }
+      this._onReady?.();
+      return;
+    }
+    if (msg.type === "send-chat") {
+      this._onSendChat?.(msg.text || "");
+      return;
+    }
+    if (msg.type === "chat-window-closed") {
+      this._open = false;
+      this._onStateChange?.(false);
+      this._cleanup();
+      return;
+    }
+    if (msg.type === "anchor-debug") {
+      const { source, bounds, idePid } = msg;
+      const b = bounds ? `${bounds.width}x${bounds.height} @ (${bounds.x},${bounds.y})` : "?";
+      vscode.window.showInformationMessage(
+        `[Multiplayer anchor] source=${source} pid=${idePid} bounds=${b}`
+      );
+      return;
+    }
+  }
+
+  async _getFreePort() {
+    return new Promise((resolve, reject) => {
+      const srv = net.createServer();
+      srv.listen(0, "127.0.0.1", () => {
+        const { port } = srv.address();
+        srv.close(() => resolve(port));
+      });
+      srv.on("error", reject);
+    });
+  }
+
+  _cleanup() {
+    try { this._socket?.close(); } catch { /* ignore */ }
+    try { this._server?.close(); } catch { /* ignore */ }
+    this._server = null;
+    this._socket = null;
+    if (this._process && !this._process.killed) {
+      try { this._process.kill(); } catch { /* ignore */ }
+    }
+    this._process = null;
+  }
+}
+
 let callHelper = null;
+let chatHelper = null;
 
 const sessionUiState = {
   mode: "idle",
@@ -487,8 +872,76 @@ function activate(context) {
       // Outgoing signal from helper → relay to remote peer via session transport
       sessionService.sendRtcSignal(signal);
     },
+    onSendChat: async (text) => {
+      await sessionService.sendChat(text);
+    },
+    onChatWindowState: (open) => {
+      sendPanelMessage(panel, { type: "floating-chat-state", payload: { open } });
+    },
+    onChatWindowReady: () => {
+      callHelper.sendToHelper({ type: "focus-overlay-window", target: "chat" });
+      callHelper.sendToHelper({ type: "chat-history", payload: latestChatMessages });
+      callHelper.sendToHelper({ type: "participants", payload: latestParticipants });
+      callHelper.sendToHelper({ type: "session-state", payload: { mode: sessionUiState.mode } });
+      pushIdeWindowBoundsToHelpers();
+    },
   });
   context.subscriptions.push({ dispose: () => callHelper.dispose() });
+
+  const openFloatingChat = async () => {
+    if (callHelper?.isActive()) {
+      callHelper.sendToHelper({ type: "open-chat-window" });
+      callHelper.sendToHelper({ type: "focus-overlay-window", target: "chat" });
+      callHelper.sendToHelper({ type: "chat-history", payload: latestChatMessages });
+      callHelper.sendToHelper({ type: "participants", payload: latestParticipants });
+      callHelper.sendToHelper({ type: "session-state", payload: { mode: sessionUiState.mode } });
+      pushIdeWindowBoundsToHelpers();
+      sendPanelMessage(panel, { type: "floating-chat-state", payload: { open: true } });
+      return;
+    }
+
+    await chatHelper.open();
+    chatHelper.forward({ type: "focus-overlay-window" });
+    pushIdeWindowBoundsToHelpers();
+  };
+
+  const closeFloatingChat = async () => {
+    if (callHelper?.isActive()) {
+      callHelper.sendToHelper({ type: "close-chat-window" });
+      sendPanelMessage(panel, { type: "floating-chat-state", payload: { open: false } });
+      return;
+    }
+
+    await chatHelper.close();
+  };
+
+  chatHelper = new ChatWindowManager({
+    helperDir,
+    onSendChat: async (text) => {
+      await sessionService.sendChat(text);
+    },
+    onStateChange: (open) => {
+      sendPanelMessage(panel, { type: "floating-chat-state", payload: { open } });
+    },
+    onReady: () => {
+      chatHelper.forward({ type: "focus-overlay-window" });
+      chatHelper.forward({ type: "chat-history", payload: latestChatMessages });
+      chatHelper.forward({ type: "session-state", payload: { mode: sessionUiState.mode } });
+      pushIdeWindowBoundsToHelpers();
+    },
+  });
+  context.subscriptions.push({ dispose: () => chatHelper.dispose() });
+
+  // Forward VS Code window focus changes to the helper so it can trigger a
+  // space-sync immediately — faster than waiting for the Python poller to
+  // notice bounds changes during a fullscreen/Space transition.
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState((state) => {
+      callHelper.sendToHelper({ type: "ide-focus-change", focused: state.focused });
+      chatHelper.forward({ type: "ide-focus-change", focused: state.focused });
+      pushIdeWindowBoundsToHelpers();
+    })
+  );
 
   panel = new MultiplayerViewProvider({
     onSendChat: async (text) => {
@@ -499,6 +952,8 @@ function activate(context) {
     },
     onStartCall: async () => {
       await callHelper.startCall();
+      callHelper.sendToHelper({ type: "focus-overlay-window" });
+      pushIdeWindowBoundsToHelpers();
     },
     onEndCall: () => {
       callHelper.stopCall();
@@ -527,10 +982,16 @@ function activate(context) {
       await sessionService.decideJoinRequest({ requestId, accepted: false });
     },
     onOpenChatTab: () => {
-      openChatPopout();
+      openFloatingChat();
     },
     onOpenBrowserTab: (initialView) => {
       openBrowserTab(initialView);
+    },
+    onOpenFloatingChat: async () => {
+      await openFloatingChat();
+    },
+    onCloseFloatingChat: async () => {
+      await closeFloatingChat();
     },
     onCopyInvite: async (kind) => {
       const invite = kind === "open"
@@ -625,6 +1086,7 @@ function activate(context) {
   sessionService.on("participants", (participants) => {
     latestParticipants = participants;
     sendPanelMessage(panel, { type: "participants", payload: participants });
+    callHelper?.sendToHelper({ type: "participants", payload: participants });
   });
 
   sessionService.on("chat-message", (message) => {
@@ -634,6 +1096,8 @@ function activate(context) {
     }
 
     sendPanelMessage(panel, { type: "chat-message", payload: message });
+    chatHelper?.forward({ type: "chat-message", payload: message });
+    callHelper?.sendToHelper({ type: "chat-message", payload: message });
   });
 
   sessionService.on("rtc-signal", (message) => {
@@ -676,7 +1140,7 @@ function activate(context) {
     vscode.commands.registerCommand("multiplayer.joinSession", joinFromPrompt),
     vscode.commands.registerCommand("multiplayer.openPanel", () => openPanel()),
     vscode.commands.registerCommand("multiplayer.openWorkspaceTab", () => openBrowserTab("session")),
-    vscode.commands.registerCommand("multiplayer.openChatTab", () => openChatPopout()),
+    vscode.commands.registerCommand("multiplayer.openChatTab", () => openFloatingChat()),
     vscode.commands.registerCommand("multiplayer.endSession", endCurrentSession),
     vscode.commands.registerCommand("multiplayer.toggleInviteOnly", async () => {
       const enabled = await vscode.window.showQuickPick(
@@ -1083,6 +1547,18 @@ function setStatus(message) {
 
 function pushSessionStateToPanel() {
   sendPanelMessage(panel, { type: "session-state", payload: { ...sessionUiState } });
+  chatHelper?.forward({ type: "session-state", payload: { mode: sessionUiState.mode } });
+  callHelper?.sendToHelper({ type: "session-state", payload: { mode: sessionUiState.mode } });
+}
+
+function pushIdeWindowBoundsToHelpers() {
+  const payload = buildIdeWindowBoundsPayload();
+  if (!payload) {
+    return;
+  }
+
+  callHelper?.sendToHelper(payload);
+  chatHelper?.forward(payload);
 }
 
 async function deactivate() {

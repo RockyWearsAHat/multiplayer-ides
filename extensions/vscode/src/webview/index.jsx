@@ -75,6 +75,7 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [unreadChat, setUnreadChat] = useState(0);
   const [chatPopoutOpen, setChatPopoutOpen] = useState(isChatPopoutSurface);
+  const [floatingChatOpen, setFloatingChatOpen] = useState(false);
 
   const [hostFormOpen, setHostFormOpen] = useState(false);
   const [joinFormOpen, setJoinFormOpen] = useState(false);
@@ -170,6 +171,11 @@ function App() {
       if (data.type === "chat-popout-state") {
         const open = Boolean(data.payload?.open) || isChatPopoutSurface;
         setChatPopoutOpen(open);
+        return;
+      }
+
+      if (data.type === "floating-chat-state") {
+        setFloatingChatOpen(Boolean(data.payload?.open));
         return;
       }
 
@@ -443,37 +449,30 @@ function App() {
         </nav>
       )}
 
-      {!isChatPopoutSurface && (
+      {!isChatPopoutSurface && !isIdle && (
         <div className="session-bar" id="sessionBar">
           <span className={connectionDotClass} />
           <span className="session-label">{sessionLabel}</span>
-          <span className={modeBadgeClass}>{isHost ? "Host" : isGuest ? "Guest" : "Idle"}</span>
+          <span className={modeBadgeClass}>{isHost ? "Host" : "Guest"}</span>
         </div>
       )}
 
       <div className={cx("view", "scroll-area", activeTab === "session" && "active")} data-view="session" id="view-session">
-        <div className="section">
-          <div className="section-head">
-            <span className="section-title">Session</span>
+        {isIdle ? (
+          <div className="idle-cta" id="idleActions">
+            <button type="button" className="primary w-full" onClick={() => { setJoinFormOpen(false); setHostFormOpen((v) => !v); }}>Host a Session</button>
+            <button type="button" className="secondary w-full" onClick={() => { setHostFormOpen(false); setJoinFormOpen((v) => !v); }}>Join…</button>
+            <p className="hint" style={{ padding: 0, fontSize: "11px", margin: 0 }}>Host to start, or paste an invite to join.</p>
           </div>
-
-          {isIdle ? (
-            <div className="row" id="idleActions">
-              <button type="button" className="primary flex-1" onClick={() => { setJoinFormOpen(false); setHostFormOpen((v) => !v); }}>Host</button>
-              <button type="button" className="secondary flex-1" onClick={() => { setHostFormOpen(false); setJoinFormOpen((v) => !v); }}>Join…</button>
-              <button type="button" className="danger" disabled>End</button>
-            </div>
-          ) : (
+        ) : (
+          <div className="section">
             <div className="row" id="liveActions">
               <button type="button" className="danger flex-1" onClick={() => vscode.postMessage({ type: "end-session" })}>End Session</button>
             </div>
-          )}
-
-          <p className="hint mt6" id="sessionHint" style={{ padding: 0, fontSize: "11px" }}>{sessionHint}</p>
-        </div>
+          </div>
+        )}
 
         <div className={cx("inline-form", hostFormOpen && "open")} id="hostForm">
-          <span className="form-title">Host a Session</span>
           <div>
             <label className="field-label" htmlFor="hostName">Your display name</label>
             <input id="hostName" ref={hostNameRef} type="text" value={hostName} onChange={(e) => setHostName(e.target.value)} placeholder="e.g. Alex" autoComplete="off" />
@@ -497,7 +496,6 @@ function App() {
         </div>
 
         <div className={cx("inline-form", joinFormOpen && "open")} id="joinForm">
-          <span className="form-title">Join a Session</span>
           <div>
             <label className="field-label" htmlFor="joinName">Your display name</label>
             <input id="joinName" ref={joinNameRef} type="text" value={joinName} onChange={(e) => setJoinName(e.target.value)} placeholder="e.g. Alex" autoComplete="off" />
@@ -525,30 +523,30 @@ function App() {
           ))}
         </div>
 
-        <div className="divider mt8" />
+        {!isIdle && (
+          <div className="section mt8">
+            <div className="section-head">
+              <span className="section-title">Participants</span>
+              {participants.length > 0 && <span style={{ fontSize: "11px", color: "var(--vscode-descriptionForeground)", fontVariantNumeric: "tabular-nums" }}>{participants.length}</span>}
+            </div>
 
-        <div className="section mt8">
-          <div className="section-head">
-            <span className="section-title">Participants</span>
-            <span id="participantCount" style={{ fontSize: "11px", color: "var(--vscode-descriptionForeground)" }}>{participants.length}</span>
-          </div>
-
-          <div id="participants">
-            {participants.length === 0 ? (
-              <div className="empty" style={{ padding: "10px 0", textAlign: "left" }}>
-                <span style={{ color: "var(--vscode-descriptionForeground)", fontSize: "12px" }}>No participants yet.</span>
-              </div>
-            ) : (
-              participants.map((item, index) => (
-                <div key={`${item.name || "participant"}-${index}`} className="list-item">
-                  <div className="avatar">{(item.name || "?").slice(0, 1)}</div>
-                  <span className="item-name">{item.name || "Unknown"}</span>
-                  <span className="item-role">{item.role || "member"}</span>
+            <div id="participants">
+              {participants.length === 0 ? (
+                <div className="empty" style={{ padding: "10px 0", textAlign: "left" }}>
+                  <span style={{ color: "var(--vscode-descriptionForeground)", fontSize: "12px" }}>No participants yet.</span>
                 </div>
-              ))
-            )}
+              ) : (
+                participants.map((item, index) => (
+                  <div key={`${item.name || "participant"}-${index}`} className="list-item">
+                    <div className="avatar">{(item.name || "?").slice(0, 1)}</div>
+                    <span className="item-name">{item.name || "Unknown"}</span>
+                    <span className="item-role">{item.role || "member"}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="section" id="inviteSection" style={{ display: isHost ? "" : "none" }}>
           <div className="section-head">
@@ -649,13 +647,6 @@ function App() {
           </div>
         </div>
 
-        <div className="divider mt8" />
-        <div className="section mt8">
-          <div className="section-head"><span className="section-title">End Session</span></div>
-          <button id="endSession2" type="button" className="danger w-full" disabled={isIdle} onClick={() => vscode.postMessage({ type: "end-session" })}>
-            End Session
-          </button>
-        </div>
       </div>
 
       <div className={cx("view", "view-chat", activeTab === "chat" && "active")} data-view="chat" id="view-chat">
@@ -663,7 +654,7 @@ function App() {
           <span className="chat-header-title">Chat</span>
           <div className="chat-header-actions">
             {chatControls.canOpen && (
-              <button id="openChatPopout" type="button" className="icon-btn" onClick={() => vscode.postMessage({ type: "open-chat-popout" })}>
+              <button id="openChatPopout" type="button" className="icon-btn" title="Open as tab" onClick={() => vscode.postMessage({ type: "open-chat-popout" })}>
                 ⧉
               </button>
             )}
@@ -675,6 +666,16 @@ function App() {
             {chatControls.canDock && (
               <button id="dockChatPopout" type="button" className="icon-btn" onClick={() => vscode.postMessage({ type: "dock-chat-popout" })}>
                 Dock
+              </button>
+            )}
+            {!floatingChatOpen && (
+              <button id="openFloatingChat" type="button" className="icon-btn" title="Float as overlay window" onClick={() => vscode.postMessage({ type: "open-floating-chat" })}>
+                ↗
+              </button>
+            )}
+            {floatingChatOpen && (
+              <button id="closeFloatingChat" type="button" className="icon-btn" title="Close overlay window" onClick={() => vscode.postMessage({ type: "close-floating-chat" })}>
+                ↙
               </button>
             )}
           </div>
@@ -758,9 +759,8 @@ function App() {
           </div>
         </div>
 
-        <p className="call-footnote">
-          Call permissions and media run in the <strong>Multiplayer Call Helper</strong> floating bar app.
-          Drag the bar anywhere over VS Code for quick mute, camera, and hang-up controls.
+        <p className="call-footnote" style={{ fontSize: "11px", color: "var(--vscode-descriptionForeground)", margin: "4px 0 0", lineHeight: 1.5, opacity: 0.7 }}>
+          Media runs in the <strong>Call Helper</strong> floating bar.
         </p>
       </div>
 

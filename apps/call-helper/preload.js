@@ -5,8 +5,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 // Expose a minimal, typed IPC surface to the renderer.
 // The renderer cannot access Node APIs directly (contextIsolation: true).
 contextBridge.exposeInMainWorld("callHelper", {
-  /** Signal to main that the renderer DOM is ready. */
+  /** Signal to main that the call renderer DOM is ready. */
   ready: () => ipcRenderer.send("renderer-ready"),
+
+  /** Signal to main that the chat renderer DOM is ready. */
+  chatReady: () => ipcRenderer.send("chat-renderer-ready"),
 
   /** Send a message from renderer → extension (via main). */
   send: (msg) => ipcRenderer.send("helper-to-ext", msg),

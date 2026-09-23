@@ -211,6 +211,16 @@ class MultiplayerViewProvider {
         return;
       }
 
+      if (message.type === "open-floating-chat") {
+        this._handlers.onOpenFloatingChat?.();
+        return;
+      }
+
+      if (message.type === "close-floating-chat") {
+        this._handlers.onCloseFloatingChat?.();
+        return;
+      }
+
       if (message.type === "open-browser-tab") {
         this._handlers.onOpenBrowserTab(message.view || "session");
         return;

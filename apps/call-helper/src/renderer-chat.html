@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multiplayer Chat</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      :root { color-scheme: dark; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: transparent;
+        color: #e5edf8;
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chat-bar {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        border-radius: 14px;
+        border: 1px solid rgba(108, 144, 188, 0.35);
+        background: linear-gradient(160deg, rgba(10, 17, 30, 0.97), rgba(17, 30, 47, 0.94));
+        box-shadow:
+          0 14px 32px rgba(3, 9, 19, 0.58),
+          inset 0 1px 0 rgba(203, 226, 255, 0.1);
+        overflow: hidden;
+      }
+
+      /* ── Header / drag region ── */
+      .header {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px 0 14px;
+        gap: 10px;
+        border-bottom: 1px solid rgba(108, 144, 188, 0.18);
+        flex-shrink: 0;
+        -webkit-app-region: drag;
+      }
+
+      .header-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(108, 144, 188, 0.3);
+        flex-shrink: 0;
+        transition: all 300ms;
+      }
+      .header-dot.live {
+        background: #5ed59f;
+        box-shadow: 0 0 8px rgba(94, 213, 159, 0.5);
+      }
+
+      .header-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(160, 192, 232, 0.85);
+        flex: 1;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        -webkit-app-region: no-drag;
+      }
+
+      .icon-btn {
+        width: 26px;
+        height: 26px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: rgba(160, 192, 232, 0.5);
+        font-size: 13px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 140ms;
+        line-height: 1;
+      }
+      .icon-btn:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(108, 144, 188, 0.25);
+        color: rgba(230, 240, 255, 0.85);
+      }
+      .icon-btn.close:hover {
+        background: rgba(255, 80, 80, 0.18);
+        border-color: rgba(255, 100, 100, 0.35);
+        color: #ffaaaa;
+      }
+
+      /* ── Message list ── */
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(108, 144, 188, 0.2) transparent;
+      }
+      .messages::-webkit-scrollbar { width: 4px; }
+      .messages::-webkit-scrollbar-track { background: transparent; }
+      .messages::-webkit-scrollbar-thumb {
+        background: rgba(108, 144, 188, 0.2);
+        border-radius: 999px;
+      }
+
+      .empty-state {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        color: rgba(160, 192, 232, 0.35);
+        text-align: center;
+        padding: 24px;
+        user-select: none;
+      }
+
+      .msg {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        animation: msgIn 160ms ease;
+      }
+      @keyframes msgIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      .msg-meta {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+      }
+      .msg-user {
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(203, 226, 255, 0.88);
+      }
+      .msg-time {
+        font-size: 10px;
+        color: rgba(160, 192, 232, 0.38);
+      }
+      .msg-body {
+        font-size: 12px;
+        color: rgba(226, 237, 248, 0.82);
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      /* ── Composer ── */
+      .composer {
+        padding: 10px 12px;
+        border-top: 1px solid rgba(108, 144, 188, 0.18);
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+        flex-shrink: 0;
+        -webkit-app-region: no-drag;
+      }
+
+      .composer input {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(108, 144, 188, 0.22);
+        border-radius: 8px;
+        color: #e5edf8;
+        font-family: inherit;
+        font-size: 12px;
+        height: 32px;
+        padding: 0 10px;
+        outline: none;
+        transition: border-color 140ms;
+        min-width: 0;
+        width: 100%;
+      }
+      .composer input:focus {
+        border-color: rgba(111, 198, 255, 0.5);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .composer input::placeholder { color: rgba(160, 192, 232, 0.32); }
+
+      .send-btn {
+        height: 32px;
+        padding: 0 14px;
+        border-radius: 8px;
+        border: 1px solid rgba(106, 141, 184, 0.32);
+        background: rgba(17, 29, 45, 0.8);
+        color: rgba(230, 240, 255, 0.9);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 140ms;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .send-btn:hover {
+        border-color: rgba(111, 198, 255, 0.65);
+        background: rgba(22, 42, 64, 0.9);
+      }
+      .send-btn:active { transform: scale(0.96); }
+    </style>
+  </head>
+  <body>
+    <div class="chat-bar">
+      <div class="header">
+        <span id="headerDot" class="header-dot"></span>
+        <span class="header-title">Chat</span>
+        <div class="header-actions">
+          <button id="closeBtn" class="icon-btn close" type="button" title="Close">✕</button>
+        </div>
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="empty-state" id="emptyState">
+          <span>No messages yet.</span>
+          <span>Start the conversation!</span>
+        </div>
+      </div>
+
+      <div class="composer">
+        <input id="chatInput" type="text" placeholder="Message everyone…" autocomplete="off" spellcheck="false" />
+        <button id="sendBtn" class="send-btn" type="button">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const headerDot  = document.getElementById("headerDot");
+      const messages   = document.getElementById("messages");
+      const chatInput  = document.getElementById("chatInput");
+      const sendBtn    = document.getElementById("sendBtn");
+      const closeBtn   = document.getElementById("closeBtn");
+
+      function escHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function addMessage(msg) {
+        // Remove empty state if present
+        const empty = document.getElementById("emptyState");
+        if (empty) empty.remove();
+
+        const ts = msg.timestamp
+          ? new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "now";
+
+        const el = document.createElement("div");
+        el.className = "msg";
+        el.innerHTML =
+          `<div class="msg-meta">` +
+            `<span class="msg-user">${escHtml(msg.user || "Unknown")}</span>` +
+            `<span class="msg-time">${ts}</span>` +
+          `</div>` +
+          `<div class="msg-body">${escHtml(msg.text || "")}</div>`;
+        messages.appendChild(el);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        callHelper.send({ type: "send-chat", text });
+        chatInput.value = "";
+        chatInput.focus();
+      }
+
+      sendBtn.addEventListener("click", sendMessage);
+      chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendMessage();
+      });
+      closeBtn.addEventListener("click", () => callHelper.closeWindow());
+
+      callHelper.onMessage((msg) => {
+        if (msg.type === "chat-history") {
+          messages.innerHTML = "";
+          const history = Array.isArray(msg.payload) ? msg.payload : [];
+          if (history.length === 0) {
+            const el = document.createElement("div");
+            el.className = "empty-state";
+            el.id = "emptyState";
+            el.innerHTML = "<span>No messages yet.</span><span>Start the conversation!</span>";
+            messages.appendChild(el);
+          } else {
+            history.forEach(addMessage);
+          }
+          return;
+        }
+
+        if (msg.type === "chat-message") {
+          addMessage(msg.payload || msg);
+          return;
+        }
+
+        if (msg.type === "session-state") {
+          const mode = msg.payload?.mode;
+          const live = mode === "host" || mode === "guest";
+          headerDot.classList.toggle("live", live);
+          return;
+        }
+      });
+
+      // Signal main process that we're ready — triggers WS connection
+      callHelper.chatReady();
+    </script>
+  </body>
+</html>
